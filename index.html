@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spark Core</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Expanding Purple Gradient Circle */
+    body::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      background: radial-gradient(circle, #a855f7, #6b21a8);
+      border-radius: 50%;
+      transform: translate(-50%, -50%) scale(0);
+      transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* Activated State */
+    body.active::before {
+      transform: translate(-50%, -50%) scale(150);
+    }
+
+    #startBtn {
+      position: relative;
+      z-index: 2;
+      padding: 16px 32px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(135deg, #2575fc, #6a11cb);
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #startBtn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 25px rgba(37, 117, 252, 0.5);
+    }
+
+    #status {
+      position: relative;
+      z-index: 1;
+      font-size: 32px;
+      font-weight: 700;
+      color: #ffffff;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      letter-spacing: 0.5px;
+      text-align: center;
+      padding: 0 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <button id="startBtn">Click to Start Spark</button>
+  <div id="status"></div>
+
+  <script>
+    const WAKE_WORD = "spark"; 
+
+    const startBtn = document.getElementById('startBtn');
+    const statusDiv = document.getElementById('status');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Speech Recognition API not supported in this browser. Try Chrome or Samsung Internet.");
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      let awaitingCommand = false;
+
+      function speak(text) {
+        recognition.stop();
+        statusDiv.textContent = text;
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.onend = () => {
+          statusDiv.textContent = "";
+          recognition.start();
+        };
+        window.speechSynthesis.speak(utterance);
+      }
+
+      recognition.onresult = (event) => {
+        const lastIndex = event.results.length - 1;
+        const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
+
+        if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
+          document.body.classList.add('active');
+          statusDiv.textContent = "Spark is listening...";
+          awaitingCommand = true;
+
+          const remainingSpeech = transcript.split(WAKE_WORD)[1].trim();
+          if (remainingSpeech.length > 0) {
+            handleCommand(remainingSpeech);
+          }
+        } 
+        else if (awaitingCommand) {
+          handleCommand(transcript);
+        }
+      };
+
+      function handleCommand(commandText) {
+        awaitingCommand = false;
+        document.body.classList.remove('active');
+        processCommand(commandText);
+      }
+
+      function processCommand(text) {
+        if (text.includes("time")) {
+          const now = new Date();
+          const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          speak(`The current time is ${timeString}.`);
+        } else if (text.includes("date")) {
+          const now = new Date();
+          const dateString = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+          speak(`Today is ${dateString}.`);
+        } else {
+          speak("How can I help you?");
+        }
+      }
+
+      recognition.onend = () => {
+        if (!window.speechSynthesis.speaking) {
+          recognition.start();
+        }
+      };
+
+      startBtn.addEventListener('click', () => {
+        recognition.start();
+        startBtn.style.display = 'none';
+      });
+    }
+  </script>
+</body>
+</html>
