@@ -67,7 +67,7 @@
     #status {
       position: relative;
       z-index: 1;
-      font-size: 32px;
+      font-size: 28px;
       font-weight: 700;
       color: #ffffff;
       text-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -75,18 +75,45 @@
       text-align: center;
       padding: 0 20px;
     }
+
+    /* New Weather Display Container */
+    #weatherDisplay {
+      position: relative;
+      z-index: 1;
+      margin-top: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+
+    #weatherEmoji {
+      font-size: 64px;
+    }
+
+    #weatherTemp {
+      font-size: 36px;
+      font-weight: 800;
+      color: #38bdf8;
+    }
   </style>
 </head>
 <body>
 
   <button id="startBtn">Click to Start Spark</button>
   <div id="status"></div>
+  <div id="weatherDisplay">
+    <div id="weatherEmoji"></div>
+    <div id="weatherTemp"></div>
+  </div>
 
   <script>
     const WAKE_WORD = "spark"; 
 
     const startBtn = document.getElementById('startBtn');
     const statusDiv = document.getElementById('status');
+    const weatherEmojiDiv = document.getElementById('weatherEmoji');
+    const weatherTempDiv = document.getElementById('weatherTemp');
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -137,8 +164,65 @@
         processCommand(commandText);
       }
 
+      // Convert WMO Weather Code to Description & Emoji
+      function getWeatherInfo(code) {
+        if (code === 0) return { desc: "clear skies", emoji: "☀️" };
+        if ([1, 2, 3].includes(code)) return { desc: "partly cloudy", emoji: "⛅" };
+        if ([45, 48].includes(code)) return { desc: "foggy", emoji: "🌫️" };
+        if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return { desc: "rainy", emoji: "🌧️" };
+        if ([71, 73, 75, 77, 85, 86].includes(code)) return { desc: "snowy", emoji: "❄️" };
+        if ([95, 96, 99].includes(code)) return { desc: "thunderstorms", emoji: "🌩️" };
+        return { desc: "fair conditions", emoji: "🌤️" };
+      }
+
+      async function fetchWeather() {
+        weatherEmojiDiv.textContent = "";
+        weatherTempDiv.textContent = "";
+
+        if (!navigator.geolocation) {
+          speak("Geolocation is not supported by your browser.");
+          return;
+        }
+
+        statusDiv.textContent = "Checking weather...";
+
+        navigator.geolocation.getCurrentPosition(async (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          try {
+            // Get city/town name
+            const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+            const geoData = await geoRes.json();
+            const city = geoData.address.city || geoData.address.town || geoData.address.village || geoData.address.suburb || "your location";
+
+            // Get live weather from Open-Meteo
+            const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+            const weatherData = await weatherRes.json();
+
+            const temp = Math.round(weatherData.current_weather.temperature);
+            const weatherCode = weatherData.current_weather.weathercode;
+            const info = getWeatherInfo(weatherCode);
+
+            // Display Emoji & Temperature in °C below status
+            weatherEmojiDiv.textContent = info.emoji;
+            weatherTempDiv.textContent = `${temp}°C`;
+
+            // Speak the response
+            speak(`It is currently ${temp} degrees Celsius and ${info.desc} in ${city}.`);
+
+          } catch (error) {
+            speak("Sorry, I had trouble getting the weather information.");
+          }
+        }, () => {
+          speak("I need location permission to check the weather for your area.");
+        });
+      }
+
       function processCommand(text) {
-        if (text.includes("time")) {
+        if (text.includes("weather") || text.includes("temperature")) {
+          fetchWeather();
+        } else if (text.includes("time")) {
           const now = new Date();
           const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           speak(`The current time is ${timeString}.`);
