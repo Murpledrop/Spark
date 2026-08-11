@@ -225,8 +225,10 @@
         weatherEmojiDiv.textContent = "";
         weatherTempDiv.textContent = "";
 
-        // Normalize text
-        let cleanText = wordsToDigits(expressionText);
+        // Clean up text and convert word numbers
+        let cleanText = wordsToDigits(expressionText)
+          .replace(/[?.,!]/g, '')
+          .replace(/what is|how much is|calculate|solve|equal|equals/gi, '');
 
         // Replace math phrasing with symbols
         let parsed = cleanText
@@ -235,14 +237,21 @@
           .replace(/times|multiplied by/g, '*')
           .replace(/divided by|over/g, '/')
           .replace(/x/g, '*')
-          .replace(/[^0-9+\-*/.]/g, ''); // Keep numbers and math symbols only
+          .replace(/[^0-9+\-*/.]/g, '');
 
         try {
-          if (!parsed) throw new Error("Invalid");
+          if (!parsed) {
+            searchWeb(expressionText);
+            return;
+          }
           const result = Function(`'use strict'; return (${parsed})`)();
+          if (isNaN(result) || result === undefined) {
+            searchWeb(expressionText);
+            return;
+          }
           speak(`The answer is ${result}.`);
         } catch (error) {
-          speak("Sorry, I couldn't calculate that math problem.");
+          searchWeb(expressionText);
         }
       }
 
@@ -325,7 +334,7 @@
           } else if (ddgData.Definition) {
             speak(ddgData.Definition);
           } else {
-            speak(`Sorry, I couldn't find a quick definition for ${cleanQuery}.`);
+            speak(`Sorry, I couldn't find an answer for ${cleanQuery}.`);
           }
 
         } catch (error) {
@@ -335,17 +344,22 @@
 
       function processCommand(text) {
         const lower = text.toLowerCase();
-        // Check for math keywords or numbers
-        if (
-          lower.includes("plus") || 
-          lower.includes("minus") || 
-          lower.includes("times") || 
-          lower.includes("divided") || 
-          lower.includes("multiplied") || 
-          lower.includes("add") || 
-          lower.includes("calculate") ||
-          /\d+\s*[\+\-\*\/]\s*\d+/.test(lower)
-        ) {
+        
+        // Convert word numbers first to test if the speech contains a math equation
+        const convertedText = wordsToDigits(lower);
+
+        // Match if it contains math operators or math keywords
+        const isMathCommand = 
+          convertedText.includes("plus") || 
+          convertedText.includes("minus") || 
+          convertedText.includes("times") || 
+          convertedText.includes("divided") || 
+          convertedText.includes("multiplied") || 
+          convertedText.includes("add") || 
+          convertedText.includes("calculate") ||
+          /[\d]+\s*[\+\-\*\/x]\s*[\d]+/.test(convertedText);
+
+        if (isMathCommand) {
           solveMath(text);
         } else if (lower.includes("weather") || lower.includes("temperature")) {
           fetchWeather();
@@ -369,7 +383,6 @@
       };
 
       startBtn.addEventListener('click', () => {
-        // Unlock AudioContext on initial tap
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         audioCtx = new AudioContext();
         audioCtx.resume();
