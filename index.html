@@ -117,6 +117,8 @@
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+    let audioCtx = null;
+
     if (!SpeechRecognition) {
       alert("Speech Recognition API not supported in this browser. Try Chrome or Samsung Internet.");
     } else {
@@ -127,37 +129,42 @@
 
       let awaitingCommand = false;
 
-      // Built-in Audio Synthesizer for the Activation Chime
+      // Play Chime sound
       function playChime() {
         try {
-          const AudioContext = window.AudioContext || window.webkitAudioContext;
-          const ctx = new AudioContext();
+          if (!audioCtx) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+          }
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+          }
 
-          // First tone (higher note)
-          const osc1 = ctx.createOscillator();
-          const gain1 = ctx.createGain();
+          // Note 1 (D5)
+          const osc1 = audioCtx.createOscillator();
+          const gain1 = audioCtx.createGain();
           osc1.type = 'sine';
-          osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5 note
-          gain1.gain.setValueAtTime(0.1, ctx.currentTime);
-          gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+          gain1.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
           osc1.connect(gain1);
-          gain1.connect(ctx.destination);
-          osc1.start(ctx.currentTime);
-          osc1.stop(ctx.currentTime + 0.25);
+          gain1.connect(audioCtx.destination);
+          osc1.start(audioCtx.currentTime);
+          osc1.stop(audioCtx.currentTime + 0.25);
 
-          // Second tone (pleasant higher harmony)
-          const osc2 = ctx.createOscillator();
-          const gain2 = ctx.createGain();
+          // Note 2 (A5)
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
           osc2.type = 'sine';
-          osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5 note
-          gain2.gain.setValueAtTime(0.1, ctx.currentTime + 0.1);
-          gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+          osc2.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1);
+          gain2.gain.setValueAtTime(0.15, audioCtx.currentTime + 0.1);
+          gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
           osc2.connect(gain2);
-          gain2.connect(ctx.destination);
-          osc2.start(ctx.currentTime + 0.1);
-          osc2.stop(ctx.currentTime + 0.35);
+          gain2.connect(audioCtx.destination);
+          osc2.start(audioCtx.currentTime + 0.1);
+          osc2.stop(audioCtx.currentTime + 0.35);
         } catch (e) {
-          console.log("Audio Context not allowed yet");
+          console.log("Audio Context error:", e);
         }
       }
 
@@ -178,7 +185,7 @@
         const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
 
         if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
-          playChime(); // Play activation sound when Spark wakes up!
+          playChime();
           document.body.classList.add('active');
           statusDiv.textContent = "Spark is listening...";
           awaitingCommand = true;
@@ -199,24 +206,39 @@
         processCommand(commandText);
       }
 
+      // Convert word numbers to digits
+      function wordsToDigits(text) {
+        const numberMap = {
+          'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+          'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+        };
+        
+        let result = text;
+        for (let word in numberMap) {
+          result = result.replace(new RegExp(`\\b${word}\\b`, 'g'), numberMap[word]);
+        }
+        return result;
+      }
+
       // Math expression evaluator
       function solveMath(expressionText) {
         weatherEmojiDiv.textContent = "";
         weatherTempDiv.textContent = "";
 
-        // Replace spoken words with math symbols
-        let parsed = expressionText
-          .replace(/plus/g, '+')
-          .replace(/minus/g, '-')
+        // Normalize text
+        let cleanText = wordsToDigits(expressionText);
+
+        // Replace math phrasing with symbols
+        let parsed = cleanText
+          .replace(/plus|add/g, '+')
+          .replace(/minus|take away/g, '-')
           .replace(/times|multiplied by/g, '*')
           .replace(/divided by|over/g, '/')
           .replace(/x/g, '*')
-          .replace(/[^0-9+\-*/.]/g, ''); // Keep only numbers and operators
+          .replace(/[^0-9+\-*/.]/g, ''); // Keep numbers and math symbols only
 
         try {
           if (!parsed) throw new Error("Invalid");
-          
-          // Safely evaluate math expression
           const result = Function(`'use strict'; return (${parsed})`)();
           speak(`The answer is ${result}.`);
         } catch (error) {
@@ -224,7 +246,7 @@
         }
       }
 
-      // Convert WMO Weather Code to Description & Emoji
+      // Weather Info
       function getWeatherInfo(code) {
         if (code === 0) return { desc: "clear skies", emoji: "☀️" };
         if ([1, 2, 3].includes(code)) return { desc: "partly cloudy", emoji: "⛅" };
@@ -312,16 +334,26 @@
       }
 
       function processCommand(text) {
-        // Detect Math Commands
-        if (text.includes("plus") || text.includes("minus") || text.includes("times") || text.includes("divided by") || text.includes("multiplied by")) {
+        const lower = text.toLowerCase();
+        // Check for math keywords or numbers
+        if (
+          lower.includes("plus") || 
+          lower.includes("minus") || 
+          lower.includes("times") || 
+          lower.includes("divided") || 
+          lower.includes("multiplied") || 
+          lower.includes("add") || 
+          lower.includes("calculate") ||
+          /\d+\s*[\+\-\*\/]\s*\d+/.test(lower)
+        ) {
           solveMath(text);
-        } else if (text.includes("weather") || text.includes("temperature")) {
+        } else if (lower.includes("weather") || lower.includes("temperature")) {
           fetchWeather();
-        } else if (text.includes("time")) {
+        } else if (lower.includes("time")) {
           const now = new Date();
           const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           speak(`The current time is ${timeString}.`);
-        } else if (text.includes("date")) {
+        } else if (lower.includes("date")) {
           const now = new Date();
           const dateString = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
           speak(`Today is ${dateString}.`);
@@ -337,6 +369,11 @@
       };
 
       startBtn.addEventListener('click', () => {
+        // Unlock AudioContext on initial tap
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        audioCtx.resume();
+
         recognition.start();
         startBtn.style.display = 'none';
       });
