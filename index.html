@@ -76,7 +76,7 @@
       padding: 0 20px;
     }
 
-    /* New Weather Display Container */
+    /* Weather Display Container */
     #weatherDisplay {
       position: relative;
       z-index: 1;
@@ -191,12 +191,10 @@
           const lon = position.coords.longitude;
 
           try {
-            // Get city/town name
             const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
             const geoData = await geoRes.json();
             const city = geoData.address.city || geoData.address.town || geoData.address.village || geoData.address.suburb || "your location";
 
-            // Get live weather from Open-Meteo
             const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
             const weatherData = await weatherRes.json();
 
@@ -204,11 +202,9 @@
             const weatherCode = weatherData.current_weather.weathercode;
             const info = getWeatherInfo(weatherCode);
 
-            // Display Emoji & Temperature in °C below status
             weatherEmojiDiv.textContent = info.emoji;
             weatherTempDiv.textContent = `${temp}°C`;
 
-            // Speak the response
             speak(`It is currently ${temp} degrees Celsius and ${info.desc} in ${city}.`);
 
           } catch (error) {
@@ -217,6 +213,47 @@
         }, () => {
           speak("I need location permission to check the weather for your area.");
         });
+      }
+
+      // Search Web/Wikipedia for answers (Free, no account required!)
+      async function searchWeb(query) {
+        weatherEmojiDiv.textContent = "";
+        weatherTempDiv.textContent = "";
+        statusDiv.textContent = "Searching online...";
+
+        // Clean query terms (remove common filler words)
+        let cleanQuery = query.replace(/^(who is|what is|tell me about|search for|what are)/i, '').trim();
+        if (!cleanQuery) cleanQuery = query;
+
+        try {
+          // Attempt 1: Fetch from Wikipedia REST API
+          const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`);
+          
+          if (wikiRes.ok) {
+            const wikiData = await wikiRes.json();
+            if (wikiData.extract) {
+              // Take the first couple sentences for short spoken answers
+              const shortAnswer = wikiData.extract.split('. ').slice(0, 2).join('. ') + '.';
+              speak(shortAnswer);
+              return;
+            }
+          }
+
+          // Attempt 2: Fallback to DuckDuckGo API if Wikipedia doesn't have a direct page match
+          const ddgRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`);
+          const ddgData = await ddgRes.json();
+
+          if (ddgData.AbstractText) {
+            speak(ddgData.AbstractText);
+          } else if (ddgData.Definition) {
+            speak(ddgData.Definition);
+          } else {
+            speak(`Sorry, I couldn't find a quick definition for ${cleanQuery}.`);
+          }
+
+        } catch (error) {
+          speak("Sorry, I had trouble connecting to the web.");
+        }
       }
 
       function processCommand(text) {
@@ -231,7 +268,8 @@
           const dateString = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
           speak(`Today is ${dateString}.`);
         } else {
-          speak("How can I help you?");
+          // Search the web/Wikipedia for all other questions!
+          searchWeb(text);
         }
       }
 
