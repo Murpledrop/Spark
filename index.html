@@ -23,6 +23,18 @@
       position: relative;
     }
 
+    /* Clock Display Style */
+    #clockDisplay {
+      position: relative;
+      z-index: 1;
+      font-size: 72px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      color: rgba(255, 255, 255, 0.9);
+      text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      margin-bottom: 20px;
+    }
+
     /* Expanding Purple Gradient Circle */
     body::before {
       content: '';
@@ -100,6 +112,8 @@
 </head>
 <body>
 
+  <div id="clockDisplay">--:--:--</div>
+
   <button id="startBtn">Click to Start Spark</button>
   <div id="status"></div>
   <div id="weatherDisplay">
@@ -114,6 +128,15 @@
     const statusDiv = document.getElementById('status');
     const weatherEmojiDiv = document.getElementById('weatherEmoji');
     const weatherTempDiv = document.getElementById('weatherTemp');
+    const clockDisplay = document.getElementById('clockDisplay');
+
+    // Live Clock Functionality
+    function updateClock() {
+      const now = new Date();
+      clockDisplay.textContent = now.toLocaleTimeString();
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -225,12 +248,10 @@
         weatherEmojiDiv.textContent = "";
         weatherTempDiv.textContent = "";
 
-        // Clean up text and convert word numbers
         let cleanText = wordsToDigits(expressionText)
           .replace(/[?.,!]/g, '')
           .replace(/what is|how much is|calculate|solve|equal|equals/gi, '');
 
-        // Replace math phrasing with symbols
         let parsed = cleanText
           .replace(/plus|add/g, '+')
           .replace(/minus|take away/g, '-')
@@ -306,17 +327,38 @@
         });
       }
 
+      // Improved Web Search
       async function searchWeb(query) {
         weatherEmojiDiv.textContent = "";
         weatherTempDiv.textContent = "";
         statusDiv.textContent = "Searching online...";
 
-        let cleanQuery = query.replace(/^(who is|what is|tell me about|search for|what are)/i, '').trim();
+        // Strip question starters ("who is", "what is") AND articles ("a", "an", "the")
+        let cleanQuery = query
+          .toLowerCase()
+          .replace(/[?.,!]/g, '')
+          .replace(/^(who|what|where|when|why|how)\s+(is|are|was|were)\s+/i, '')
+          .replace(/^(a|an|the)\s+/i, '')
+          .replace(/^(tell me about|search for)\s+/i, '')
+          .trim();
+
         if (!cleanQuery) cleanQuery = query;
 
         try {
-          const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`);
+          // Attempt direct Wikipedia match
+          let wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`);
           
+          // If 404, query Wikipedia search index for best matching article
+          if (!wikiRes.ok) {
+            const searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&utf8=&format=json&origin=*`);
+            const searchData = await searchRes.json();
+            
+            if (searchData.query && searchData.query.search.length > 0) {
+              const bestTitle = searchData.query.search[0].title;
+              wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(bestTitle)}`);
+            }
+          }
+
           if (wikiRes.ok) {
             const wikiData = await wikiRes.json();
             if (wikiData.extract) {
@@ -326,7 +368,8 @@
             }
           }
 
-          const ddgRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`);
+          // DuckDuckGo Fallback
+          const ddgRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1&skip_disambig=1`);
           const ddgData = await ddgRes.json();
 
           if (ddgData.AbstractText) {
@@ -334,7 +377,7 @@
           } else if (ddgData.Definition) {
             speak(ddgData.Definition);
           } else {
-            speak(`Sorry, I couldn't find an answer for ${cleanQuery}.`);
+            speak(`Sorry, I couldn't find information about ${cleanQuery}.`);
           }
 
         } catch (error) {
@@ -345,19 +388,18 @@
       function processCommand(text) {
         const lower = text.toLowerCase();
         
-        // Convert word numbers first to test if the speech contains a math equation
         const convertedText = wordsToDigits(lower);
 
-        // Match if it contains math operators or math keywords
+        // Ensure phrase has math operators AND at least one number
         const isMathCommand = 
-          convertedText.includes("plus") || 
-          convertedText.includes("minus") || 
-          convertedText.includes("times") || 
-          convertedText.includes("divided") || 
-          convertedText.includes("multiplied") || 
-          convertedText.includes("add") || 
-          convertedText.includes("calculate") ||
-          /[\d]+\s*[\+\-\*\/x]\s*[\d]+/.test(convertedText);
+          (convertedText.includes("plus") || 
+           convertedText.includes("minus") || 
+           convertedText.includes("times") || 
+           convertedText.includes("divided") || 
+           convertedText.includes("multiplied") || 
+           convertedText.includes("add") || 
+           convertedText.includes("calculate")) &&
+           /\d/.test(convertedText);
 
         if (isMathCommand) {
           solveMath(text);
