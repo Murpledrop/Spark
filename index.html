@@ -127,6 +127,40 @@
 
       let awaitingCommand = false;
 
+      // Built-in Audio Synthesizer for the Activation Chime
+      function playChime() {
+        try {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          const ctx = new AudioContext();
+
+          // First tone (higher note)
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5 note
+          gain1.gain.setValueAtTime(0.1, ctx.currentTime);
+          gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          osc1.connect(gain1);
+          gain1.connect(ctx.destination);
+          osc1.start(ctx.currentTime);
+          osc1.stop(ctx.currentTime + 0.25);
+
+          // Second tone (pleasant higher harmony)
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5 note
+          gain2.gain.setValueAtTime(0.1, ctx.currentTime + 0.1);
+          gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.start(ctx.currentTime + 0.1);
+          osc2.stop(ctx.currentTime + 0.35);
+        } catch (e) {
+          console.log("Audio Context not allowed yet");
+        }
+      }
+
       function speak(text) {
         recognition.stop();
         statusDiv.textContent = text;
@@ -144,6 +178,7 @@
         const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
 
         if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
+          playChime(); // Play activation sound when Spark wakes up!
           document.body.classList.add('active');
           statusDiv.textContent = "Spark is listening...";
           awaitingCommand = true;
@@ -162,6 +197,31 @@
         awaitingCommand = false;
         document.body.classList.remove('active');
         processCommand(commandText);
+      }
+
+      // Math expression evaluator
+      function solveMath(expressionText) {
+        weatherEmojiDiv.textContent = "";
+        weatherTempDiv.textContent = "";
+
+        // Replace spoken words with math symbols
+        let parsed = expressionText
+          .replace(/plus/g, '+')
+          .replace(/minus/g, '-')
+          .replace(/times|multiplied by/g, '*')
+          .replace(/divided by|over/g, '/')
+          .replace(/x/g, '*')
+          .replace(/[^0-9+\-*/.]/g, ''); // Keep only numbers and operators
+
+        try {
+          if (!parsed) throw new Error("Invalid");
+          
+          // Safely evaluate math expression
+          const result = Function(`'use strict'; return (${parsed})`)();
+          speak(`The answer is ${result}.`);
+        } catch (error) {
+          speak("Sorry, I couldn't calculate that math problem.");
+        }
       }
 
       // Convert WMO Weather Code to Description & Emoji
@@ -215,31 +275,26 @@
         });
       }
 
-      // Search Web/Wikipedia for answers (Free, no account required!)
       async function searchWeb(query) {
         weatherEmojiDiv.textContent = "";
         weatherTempDiv.textContent = "";
         statusDiv.textContent = "Searching online...";
 
-        // Clean query terms (remove common filler words)
         let cleanQuery = query.replace(/^(who is|what is|tell me about|search for|what are)/i, '').trim();
         if (!cleanQuery) cleanQuery = query;
 
         try {
-          // Attempt 1: Fetch from Wikipedia REST API
           const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanQuery)}`);
           
           if (wikiRes.ok) {
             const wikiData = await wikiRes.json();
             if (wikiData.extract) {
-              // Take the first couple sentences for short spoken answers
               const shortAnswer = wikiData.extract.split('. ').slice(0, 2).join('. ') + '.';
               speak(shortAnswer);
               return;
             }
           }
 
-          // Attempt 2: Fallback to DuckDuckGo API if Wikipedia doesn't have a direct page match
           const ddgRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`);
           const ddgData = await ddgRes.json();
 
@@ -257,7 +312,10 @@
       }
 
       function processCommand(text) {
-        if (text.includes("weather") || text.includes("temperature")) {
+        // Detect Math Commands
+        if (text.includes("plus") || text.includes("minus") || text.includes("times") || text.includes("divided by") || text.includes("multiplied by")) {
+          solveMath(text);
+        } else if (text.includes("weather") || text.includes("temperature")) {
           fetchWeather();
         } else if (text.includes("time")) {
           const now = new Date();
@@ -268,7 +326,6 @@
           const dateString = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
           speak(`Today is ${dateString}.`);
         } else {
-          // Search the web/Wikipedia for all other questions!
           searchWeb(text);
         }
       }
