@@ -56,7 +56,7 @@
       transition: opacity 0.5s ease-in-out;
     }
 
-    /* Clock Display Style */
+    /* Clock Display Style (Changes based on active view) */
     #clockDisplay {
       font-weight: 800;
       letter-spacing: 2px;
@@ -162,4 +162,155 @@
       background: linear-gradient(135deg, #2575fc, #6a11cb);
       border: none;
       border-radius: 50px;
-      cursor
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-top: 20px;
+    }
+
+    #startBtn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 25px rgba(37, 117, 252, 0.5);
+    }
+
+    #status {
+      position: relative;
+      z-index: 1;
+      font-size: 24px;
+      font-weight: 700;
+      color: #ffffff;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      margin-top: 15px;
+      text-align: center;
+      padding: 0 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="clockDisplay" class="large">--:--</div>
+
+  <div id="displayContainer">
+    <div id="spaceCountdownDisplay">T-MINUS 10</div>
+    <div id="weatherDisplay">
+      <div id="weatherEmoji"></div>
+      <div id="weatherTemp"></div>
+    </div>
+    <div id="hourlyDisplay"></div>
+  </div>
+
+  <button id="startBtn">Click to Start Spark</button>
+  <div id="status"></div>
+
+  <script>
+    const WAKE_WORD = "spark"; 
+
+    const startBtn = document.getElementById('startBtn');
+    const statusDiv = document.getElementById('status');
+    const weatherEmojiDiv = document.getElementById('weatherEmoji');
+    const weatherTempDiv = document.getElementById('weatherTemp');
+    const hourlyDisplay = document.getElementById('hourlyDisplay');
+    const clockDisplay = document.getElementById('clockDisplay');
+    const spaceCountdownDisplay = document.getElementById('spaceCountdownDisplay');
+    const weatherDisplay = document.getElementById('weatherDisplay');
+
+    let currentViewMode = 0; // 0 = Clock View, 1 = Hourly Forecast View
+    let hourlyWeatherData = null;
+    let activeTimer = null;
+    let activeAlarm = null;
+    let countdownInterval = null;
+    let audioCtx = null;
+    let awaitingCommand = false;
+
+    // --- SOUND EFFECTS ---
+    function playSpaceChime() {
+      try {
+        if (!audioCtx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          audioCtx = new AudioContext();
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const notes = [440, 554.37, 659.25, 880];
+        notes.forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + (idx * 0.12));
+
+          gain.gain.setValueAtTime(0, audioCtx.currentTime + (idx * 0.12));
+          gain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + (idx * 0.12) + 0.05);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (idx * 0.12) + 0.8);
+
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+
+          osc.start(audioCtx.currentTime + (idx * 0.12));
+          osc.stop(audioCtx.currentTime + (idx * 0.12) + 0.8);
+        });
+      } catch (e) {
+        console.log("Space Chime Error:", e);
+      }
+    }
+
+    function playChime() {
+      try {
+        if (!audioCtx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          audioCtx = new AudioContext();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+        gain1.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start(audioCtx.currentTime);
+        osc1.stop(audioCtx.currentTime + 0.25);
+
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1);
+        gain2.gain.setValueAtTime(0.15, audioCtx.currentTime + 0.1);
+        gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(audioCtx.currentTime + 0.1);
+        osc2.stop(audioCtx.currentTime + 0.35);
+      } catch (e) {
+        console.log("Audio Context error:", e);
+      }
+    }
+
+    // --- ALARM CHECKER ---
+    function checkAlarm(now) {
+      if (activeAlarm && now.getHours() === activeAlarm.hours && now.getMinutes() === activeAlarm.minutes && now.getSeconds() === 0) {
+        playSpaceChime();
+        statusDiv.textContent = "⏰ Alarm Alert!";
+        setTimeout(() => { statusDiv.textContent = ""; }, 10000);
+        activeAlarm = null;
+      }
+    }
+
+    // Clock Functionality (Hours and Minutes only)
+    function updateClock() {
+      const now = new Date();
+      clockDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      checkAlarm(now);
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Trigger Pulse Expansion Animation
+    function triggerPulseAnimation() {
+      document.body.classList.add('active');
+      setTimeout(() => {
+        if (!await
