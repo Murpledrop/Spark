@@ -112,4 +112,436 @@
       border-radius: 16px;
       display: flex;
       flex-direction: column;
-      align-
+      align-items: center;
+      min-width: 75px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+
+    .hourly-time {
+      font-size: 14px;
+      opacity: 0.8;
+      font-weight: 600;
+    }
+
+    .hourly-emoji {
+      font-size: 28px;
+      margin: 6px 0;
+    }
+
+    .hourly-temp {
+      font-size: 18px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+
+    #startBtn {
+      position: relative;
+      z-index: 2;
+      padding: 16px 32px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(135deg, #2575fc, #6a11cb);
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-top: 20px;
+    }
+
+    #startBtn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 25px rgba(37, 117, 252, 0.5);
+    }
+
+    #status {
+      position: relative;
+      z-index: 1;
+      font-size: 24px;
+      font-weight: 700;
+      color: #ffffff;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      margin-top: 15px;
+      text-align: center;
+      padding: 0 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="clockDisplay" class="large">--:--</div>
+
+  <div id="displayContainer">
+    <div id="weatherDisplay">
+      <div id="weatherEmoji"></div>
+      <div id="weatherTemp"></div>
+    </div>
+    <div id="hourlyDisplay"></div>
+  </div>
+
+  <button id="startBtn">Click to Start Spark</button>
+  <div id="status"></div>
+
+  <script>
+    const WAKE_WORD = "spark"; 
+
+    const startBtn = document.getElementById('startBtn');
+    const statusDiv = document.getElementById('status');
+    const weatherEmojiDiv = document.getElementById('weatherEmoji');
+    const weatherTempDiv = document.getElementById('weatherTemp');
+    const hourlyDisplay = document.getElementById('hourlyDisplay');
+    const clockDisplay = document.getElementById('clockDisplay');
+
+    let currentViewMode = 0; // 0 = Clock View, 1 = Hourly Forecast View
+    let hourlyWeatherData = null;
+
+    // Fullscreen Function
+    function openFullscreen() {
+      const elem = document.documentElement;
+      try {
+        if (elem.requestFullscreen) {
+          elem.requestFullscreen();
+        } else if (elem.webkitRequestFullscreen) { /* Safari / Chrome Mobile */
+          elem.webkitRequestFullscreen();
+        } else if (elem.msRequestFullscreen) {
+          elem.msRequestFullscreen();
+        }
+      } catch (err) {
+        console.log("Fullscreen request declined or unsupported:", err);
+      }
+    }
+
+    // Clock Functionality (Hours and Minutes only)
+    function updateClock() {
+      const now = new Date();
+      clockDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Trigger Pulse Expansion Animation
+    function triggerPulseAnimation() {
+      document.body.classList.add('active');
+      setTimeout(() => {
+        if (!awaitingCommand) {
+          document.body.classList.remove('active');
+        }
+      }, 700);
+    }
+
+    // Alexa-style Display Cycle (Rotates every 8 seconds)
+    function cycleDisplayMode() {
+      triggerPulseAnimation();
+      
+      if (currentViewMode === 0) {
+        // Switch to Forecast View
+        clockDisplay.className = "small";
+        weatherDisplay.style.display = "none";
+        hourlyDisplay.style.display = "flex";
+        currentViewMode = 1;
+      } else {
+        // Switch back to Large Clock View
+        clockDisplay.className = "large";
+        weatherDisplay.style.display = "flex";
+        hourlyDisplay.style.display = "none";
+        currentViewMode = 0;
+      }
+    }
+
+    // Start auto-cycling every 8 seconds
+    setInterval(cycleDisplayMode, 8000);
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let audioCtx = null;
+    let awaitingCommand = false;
+
+    if (!SpeechRecognition) {
+      alert("Speech Recognition API not supported in this browser. Try Chrome or Samsung Internet.");
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      function playChime() {
+        try {
+          if (!audioCtx) {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+          }
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+          }
+
+          const osc1 = audioCtx.createOscillator();
+          const gain1 = audioCtx.createGain();
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+          gain1.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+          osc1.connect(gain1);
+          gain1.connect(audioCtx.destination);
+          osc1.start(audioCtx.currentTime);
+          osc1.stop(audioCtx.currentTime + 0.25);
+
+          const osc2 = audioCtx.createOscillator();
+          const gain2 = audioCtx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1);
+          gain2.gain.setValueAtTime(0.15, audioCtx.currentTime + 0.1);
+          gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+          osc2.connect(gain2);
+          gain2.connect(audioCtx.destination);
+          osc2.start(audioCtx.currentTime + 0.1);
+          osc2.stop(audioCtx.currentTime + 0.35);
+        } catch (e) {
+          console.log("Audio Context error:", e);
+        }
+      }
+
+      function speak(text) {
+        recognition.stop();
+        statusDiv.textContent = text;
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.onend = () => {
+          statusDiv.textContent = "";
+          recognition.start();
+        };
+        window.speechSynthesis.speak(utterance);
+      }
+
+      recognition.onresult = (event) => {
+        const lastIndex = event.results.length - 1;
+        const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
+
+        if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
+          playChime();
+          document.body.classList.add('active');
+          statusDiv.textContent = "Spark is listening...";
+          awaitingCommand = true;
+
+          const remainingSpeech = transcript.split(WAKE_WORD)[1].trim();
+          if (remainingSpeech.length > 0) {
+            handleCommand(remainingSpeech);
+          }
+        } 
+        else if (awaitingCommand) {
+          handleCommand(transcript);
+        }
+      };
+
+      function handleCommand(commandText) {
+        awaitingCommand = false;
+        document.body.classList.remove('active');
+        processCommand(commandText);
+      }
+
+      function wordsToDigits(text) {
+        const numberMap = {
+          'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+          'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+        };
+        let result = text;
+        for (let word in numberMap) {
+          result = result.replace(new RegExp(`\\b${word}\\b`, 'g'), numberMap[word]);
+        }
+        return result;
+      }
+
+      function getWeatherInfo(code) {
+        if (code === 0) return { desc: "clear skies", emoji: "☀️" };
+        if ([1, 2, 3].includes(code)) return { desc: "partly cloudy", emoji: "⛅" };
+        if ([45, 48].includes(code)) return { desc: "foggy", emoji: "🌫️" };
+        if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return { desc: "rainy", emoji: "🌧️" };
+        if ([71, 73, 75, 77, 85, 86].includes(code)) return { desc: "snowy", emoji: "❄️" };
+        if ([95, 96, 99].includes(code)) return { desc: "thunderstorms", emoji: "🌩️" };
+        return { desc: "fair conditions", emoji: "🌤️" };
+      }
+
+      // Fetch Current Weather + Hourly Forecast
+      async function fetchWeather() {
+        if (!navigator.geolocation) return;
+
+        navigator.geolocation.getCurrentPosition(async (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          try {
+            const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=1`);
+            const weatherData = await weatherRes.json();
+
+            // Current Weather
+            const temp = Math.round(weatherData.current_weather.temperature);
+            const weatherCode = weatherData.current_weather.weathercode;
+            const info = getWeatherInfo(weatherCode);
+
+            weatherEmojiDiv.textContent = info.emoji;
+            weatherTempDiv.textContent = `${temp}°C`;
+
+            // Hourly Cards Generation (Next 5 hours)
+            const currentHour = new Date().getHours();
+            hourlyDisplay.innerHTML = "";
+
+            for (let i = currentHour; i < Math.min(currentHour + 5, 24); i++) {
+              const hourTime = i === 0 ? "12 AM" : i > 12 ? `${i - 12} PM` : i === 12 ? "12 PM" : `${i} AM`;
+              const hourTemp = Math.round(weatherData.hourly.temperature_2m[i]);
+              const hourCode = weatherData.hourly.weathercode[i];
+              const hourInfo = getWeatherInfo(hourCode);
+
+              const card = document.createElement("div");
+              card.className = "hourly-card";
+              card.innerHTML = `
+                <div class="hourly-time">${hourTime}</div>
+                <div class="hourly-emoji">${hourInfo.emoji}</div>
+                <div class="hourly-temp">${hourTemp}°C</div>
+              `;
+              hourlyDisplay.appendChild(card);
+            }
+
+          } catch (error) {
+            console.log("Error loading weather data:", error);
+          }
+        });
+      }
+
+      // Web Search Fallback
+      async function searchWeb(query) {
+        statusDiv.textContent = "Searching online...";
+
+        let cleanQuery = query
+          .toLowerCase()
+          .replace(/[?.,!]/g, '')
+          .replace(/^(can|do|does|will|should|could|would|is|are|was|were)\s+/i, '')
+          .replace(/^(who|what|where|when|why|how)\s+(is|are|was|were|do|does|did|can)?\s*/i, '')
+          .replace(/^(a|an|the)\s+/i, '')
+          .replace(/^(tell me about|search for)\s+/i, '')
+          .trim();
+
+        if (!cleanQuery) cleanQuery = query;
+
+        try {
+          const ddgRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1&skip_disambig=1`);
+          const ddgData = await ddgRes.json();
+
+          if (ddgData.AbstractText) {
+            speak(ddgData.AbstractText);
+            return;
+          } else if (ddgData.Definition) {
+            speak(ddgData.Definition);
+            return;
+          }
+
+          const searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&utf8=&format=json&origin=*`);
+          const searchData = await searchRes.json();
+
+          if (searchData.query && searchData.query.search.length > 0) {
+            const bestTitle = searchData.query.search[0].title;
+            const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(bestTitle)}`);
+            
+            if (wikiRes.ok) {
+              const wikiData = await wikiRes.json();
+              if (wikiData.extract) {
+                const shortAnswer = wikiData.extract.split('. ').slice(0, 2).join('. ') + '.';
+                speak(shortAnswer);
+                return;
+              }
+            }
+          }
+
+          speak(`Sorry, I couldn't find an answer for ${cleanQuery}.`);
+
+        } catch (error) {
+          speak("Sorry, I had trouble connecting to the web.");
+        }
+      }
+
+      // Command Processor with Built-In Conversational Rules
+      function processCommand(text) {
+        const lower = text.toLowerCase().trim();
+
+        // 1. Greetings & Intros
+        if (/^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/.test(lower)) {
+          speak("Hi, I'm Spark. What can I help you with?");
+          return;
+        }
+
+        // 2. Identity Questions
+        if (lower.includes("what's your name") || lower.includes("what is your name") || lower.includes("who are you")) {
+          speak("I'm Spark, your virtual assistant. What can I help you with?");
+          return;
+        }
+
+        // 3. Status Questions
+        if (lower.includes("how are you") || lower.includes("how do you do")) {
+          speak("I'm doing great! How can I help you today?");
+          return;
+        }
+
+        // 4. Weather Queries
+        if (lower.includes("weather") || lower.includes("temperature")) {
+          fetchWeather();
+          speak("Here is the current weather update.");
+          return;
+        }
+
+        // 5. Time & Date Queries
+        if (lower.includes("time")) {
+          const now = new Date();
+          const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          speak(`The current time is ${timeString}.`);
+          return;
+        }
+
+        if (lower.includes("date")) {
+          const now = new Date();
+          const dateString = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+          speak(`Today is ${dateString}.`);
+          return;
+        }
+
+        // 6. Math Check
+        const convertedText = wordsToDigits(lower);
+        const isMathCommand = 
+          (convertedText.includes("plus") || 
+           convertedText.includes("minus") || 
+           convertedText.includes("times") || 
+           convertedText.includes("divided") || 
+           convertedText.includes("multiplied") || 
+           convertedText.includes("add") || 
+           convertedText.includes("calculate")) &&
+           /\d/.test(convertedText);
+
+        if (isMathCommand) {
+          solveMath(text);
+        } else {
+          searchWeb(text);
+        }
+      }
+
+      recognition.onend = () => {
+        if (!window.speechSynthesis.speaking) {
+          recognition.start();
+        }
+      };
+
+      startBtn.addEventListener('click', () => {
+        openFullscreen();
+
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+        audioCtx.resume();
+
+        fetchWeather();
+        try {
+          recognition.start();
+          startBtn.style.display = 'none';
+        } catch (e) {
+          console.log("Speech Recognition start error:", e);
+        }
+      });
+    }
+  </script>
+</body>
+</html>
