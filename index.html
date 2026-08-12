@@ -56,7 +56,7 @@
       transition: opacity 0.5s ease-in-out;
     }
 
-    /* Clock Display Style (Changes based on active view) */
+    /* Clock Display Style */
     #clockDisplay {
       font-weight: 800;
       letter-spacing: 2px;
@@ -184,6 +184,9 @@
   <div id="status"></div>
 
   <script>
+    // 🔑 PASTE YOUR FREE OPENROUTER API KEY HERE
+    const OPENROUTER_API_KEY = "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";
+
     const WAKE_WORD = "spark"; 
 
     const startBtn = document.getElementById('startBtn');
@@ -194,7 +197,6 @@
     const clockDisplay = document.getElementById('clockDisplay');
 
     let currentViewMode = 0; // 0 = Clock View, 1 = Hourly Forecast View
-    let hourlyWeatherData = null;
 
     // Fullscreen Function
     function openFullscreen() {
@@ -202,17 +204,17 @@
       try {
         if (elem.requestFullscreen) {
           elem.requestFullscreen();
-        } else if (elem.webkitRequestFullscreen) { /* Safari / Chrome Mobile */
+        } else if (elem.webkitRequestFullscreen) {
           elem.webkitRequestFullscreen();
         } else if (elem.msRequestFullscreen) {
           elem.msRequestFullscreen();
         }
       } catch (err) {
-        console.log("Fullscreen request declined or unsupported:", err);
+        console.log("Fullscreen declined/unsupported:", err);
       }
     }
 
-    // Clock Functionality (Hours and Minutes only)
+    // Clock Functionality
     function updateClock() {
       const now = new Date();
       clockDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -235,13 +237,11 @@
       triggerPulseAnimation();
       
       if (currentViewMode === 0) {
-        // Switch to Forecast View
         clockDisplay.className = "small";
         weatherDisplay.style.display = "none";
         hourlyDisplay.style.display = "flex";
         currentViewMode = 1;
       } else {
-        // Switch back to Large Clock View
         clockDisplay.className = "large";
         weatherDisplay.style.display = "flex";
         hourlyDisplay.style.display = "none";
@@ -249,7 +249,6 @@
       }
     }
 
-    // Start auto-cycling every 8 seconds
     setInterval(cycleDisplayMode, 8000);
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -372,7 +371,6 @@
             const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=1`);
             const weatherData = await weatherRes.json();
 
-            // Current Weather
             const temp = Math.round(weatherData.current_weather.temperature);
             const weatherCode = weatherData.current_weather.weathercode;
             const info = getWeatherInfo(weatherCode);
@@ -380,7 +378,6 @@
             weatherEmojiDiv.textContent = info.emoji;
             weatherTempDiv.textContent = `${temp}°C`;
 
-            // Hourly Cards Generation (Next 5 hours)
             const currentHour = new Date().getHours();
             hourlyDisplay.innerHTML = "";
 
@@ -406,87 +403,79 @@
         });
       }
 
-      // Web Search Fallback
+      // 🤖 OpenRouter FREE AI Handler
       async function searchWeb(query) {
-        statusDiv.textContent = "Searching online...";
+        statusDiv.textContent = "Spark is thinking...";
 
-        let cleanQuery = query
-          .toLowerCase()
-          .replace(/[?.,!]/g, '')
-          .replace(/^(can|do|does|will|should|could|would|is|are|was|were)\s+/i, '')
-          .replace(/^(who|what|where|when|why|how)\s+(is|are|was|were|do|does|did|can)?\s*/i, '')
-          .replace(/^(a|an|the)\s+/i, '')
-          .replace(/^(tell me about|search for)\s+/i, '')
-          .trim();
-
-        if (!cleanQuery) cleanQuery = query;
+        if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === "YOUR_OPENROUTER_API_KEY_HERE") {
+          speak("Please set your OpenRouter API key in the code.");
+          return;
+        }
 
         try {
-          const ddgRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1&skip_disambig=1`);
-          const ddgData = await ddgRes.json();
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "meta-llama/llama-3.2-1b-instruct:free", // Completely free model
+              temperature: 0.0, // Non-random, consistent answers
+              messages: [
+                {
+                  role: "user",
+                  content: `You are Spark, a helpful voice assistant. Answer the user's question directly in 1 or 2 short sentences suitable for speech: ${query}`
+                }
+              ]
+            })
+          });
 
-          if (ddgData.AbstractText) {
-            speak(ddgData.AbstractText);
-            return;
-          } else if (ddgData.Definition) {
-            speak(ddgData.Definition);
-            return;
+          const data = await response.json();
+
+          if (data.choices && data.choices[0].message.content) {
+            const aiResponse = data.choices[0].message.content.trim();
+            speak(aiResponse);
+          } else {
+            speak("Sorry, I couldn't find an answer to that.");
           }
-
-          const searchRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&utf8=&format=json&origin=*`);
-          const searchData = await searchRes.json();
-
-          if (searchData.query && searchData.query.search.length > 0) {
-            const bestTitle = searchData.query.search[0].title;
-            const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(bestTitle)}`);
-            
-            if (wikiRes.ok) {
-              const wikiData = await wikiRes.json();
-              if (wikiData.extract) {
-                const shortAnswer = wikiData.extract.split('. ').slice(0, 2).join('. ') + '.';
-                speak(shortAnswer);
-                return;
-              }
-            }
-          }
-
-          speak(`Sorry, I couldn't find an answer for ${cleanQuery}.`);
 
         } catch (error) {
-          speak("Sorry, I had trouble connecting to the web.");
+          console.error("OpenRouter API Error:", error);
+          speak("Sorry, I had trouble connecting to my AI service.");
         }
       }
 
-      // Command Processor with Built-In Conversational Rules
+      // Command Processor
       function processCommand(text) {
         const lower = text.toLowerCase().trim();
 
-        // 1. Greetings & Intros
+        // 1. Greetings
         if (/^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/.test(lower)) {
           speak("Hi, I'm Spark. What can I help you with?");
           return;
         }
 
-        // 2. Identity Questions
+        // 2. Identity
         if (lower.includes("what's your name") || lower.includes("what is your name") || lower.includes("who are you")) {
           speak("I'm Spark, your virtual assistant. What can I help you with?");
           return;
         }
 
-        // 3. Status Questions
+        // 3. Status
         if (lower.includes("how are you") || lower.includes("how do you do")) {
           speak("I'm doing great! How can I help you today?");
           return;
         }
 
-        // 4. Weather Queries
+        // 4. Weather
         if (lower.includes("weather") || lower.includes("temperature")) {
           fetchWeather();
           speak("Here is the current weather update.");
           return;
         }
 
-        // 5. Time & Date Queries
+        // 5. Time & Date
         if (lower.includes("time")) {
           const now = new Date();
           const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -501,28 +490,13 @@
           return;
         }
 
-        // 6. Math Check
-        const convertedText = wordsToDigits(lower);
-        const isMathCommand = 
-          (convertedText.includes("plus") || 
-           convertedText.includes("minus") || 
-           convertedText.includes("times") || 
-           convertedText.includes("divided") || 
-           convertedText.includes("multiplied") || 
-           convertedText.includes("add") || 
-           convertedText.includes("calculate")) &&
-           /\d/.test(convertedText);
-
-        if (isMathCommand) {
-          solveMath(text);
-        } else {
-          searchWeb(text);
-        }
+        // 6. Everything else passes to OpenRouter AI!
+        searchWeb(text);
       }
 
       recognition.onend = () => {
         if (!window.speechSynthesis.speaking) {
-          recognition.start();
+          try { recognition.start(); } catch(e) {}
         }
       };
 
