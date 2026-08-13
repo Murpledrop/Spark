@@ -17,9 +17,9 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      min-height: 100vh;
       margin: 0;
-      overflow: hidden;
+      overflow-x: hidden;
       position: relative;
     }
 
@@ -146,6 +146,50 @@
       display: none;
     }
 
+    /* Lists Widget Container */
+    #listsWidget {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 15px;
+      margin-top: 20px;
+      max-width: 90vw;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .list-card {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 12px 16px;
+      min-width: 180px;
+      max-width: 260px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      text-align: left;
+    }
+
+    .list-card h3 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      color: #38bdf8;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 4px;
+    }
+
+    .list-card ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 14px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .list-card li {
+      margin-bottom: 4px;
+    }
+
     #startBtn {
       position: relative;
       z-index: 2;
@@ -194,6 +238,21 @@
 
   <div id="timerDisplay"></div>
 
+  <div id="listsWidget">
+    <div class="list-card">
+      <h3>📝 Notes</h3>
+      <ul id="notesUI"></ul>
+    </div>
+    <div class="list-card">
+      <h3>🛒 Shopping List</h3>
+      <ul id="shoppingUI"></ul>
+    </div>
+    <div class="list-card">
+      <h3>⏰ Reminders</h3>
+      <ul id="remindersUI"></ul>
+    </div>
+  </div>
+
   <button id="startBtn">Click to Start Spark</button>
   <div id="status"></div>
 
@@ -210,6 +269,29 @@
     const hourlyDisplay = document.getElementById('hourlyDisplay');
     const clockDisplay = document.getElementById('clockDisplay');
     const timerDisplay = document.getElementById('timerDisplay');
+
+    // Persistent Memory (localStorage)
+    let appData = {
+      notes: JSON.parse(localStorage.getItem('spark_notes')) || [],
+      shopping: JSON.parse(localStorage.getItem('spark_shopping')) || [],
+      reminders: JSON.parse(localStorage.getItem('spark_reminders')) || []
+    };
+
+    function updateListsUI() {
+      const renderList = (elementId, items) => {
+        const ul = document.getElementById(elementId);
+        ul.innerHTML = items.length === 0 ? "<i style='opacity:0.5'>Empty</i>" : items.map(item => `<li>${item}</li>`).join('');
+      };
+      renderList('notesUI', appData.notes);
+      renderList('shoppingUI', appData.shopping);
+      renderList('remindersUI', appData.reminders);
+    }
+    updateListsUI();
+
+    function saveData(key, array) {
+      localStorage.setItem(`spark_${key}`, JSON.stringify(array));
+      updateListsUI();
+    }
 
     let currentViewMode = 0; // 0 = Clock View, 1 = Hourly Forecast View
     let timerInterval = null;
@@ -520,7 +602,6 @@
             timerDisplay.textContent = `⏱️ ${formatTime(remaining)}`;
           } 
           else if (remaining <= 10 && remaining > 0) {
-            // T-Minus 10 countdown state
             timerDisplay.textContent = `T-Minus ${remaining}`;
             speak(`${remaining}`);
           } 
@@ -535,7 +616,6 @@
       }
 
       function setAlarm(targetTimeStr) {
-        // Parse time like "7:30 am" or "15:00"
         const timeMatch = targetTimeStr.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
         if (!timeMatch) {
           speak("Sorry, I couldn't understand that alarm time.");
@@ -554,7 +634,7 @@
         alarmDate.setHours(hours, minutes, 0, 0);
 
         if (alarmDate <= now) {
-          alarmDate.setDate(alarmDate.getDate() + 1); // Set for tomorrow
+          alarmDate.setDate(alarmDate.getDate() + 1);
         }
 
         activeAlarms.push(alarmDate);
@@ -655,7 +735,72 @@
           return;
         }
 
-        // 4. Timers
+        // 4. Notes System
+        if (lower.includes("clear my notes") || lower.includes("clear notes")) {
+          appData.notes = [];
+          saveData('notes', appData.notes);
+          speak("Your notes have been cleared.");
+          return;
+        }
+        if (lower.includes("read my notes") || lower.includes("show my notes") || lower.includes("what are my notes")) {
+          if (appData.notes.length === 0) speak("You don't have any saved notes.");
+          else speak(`Here are your notes: ${appData.notes.join(', ')}.`);
+          return;
+        }
+        if (lower.includes("note") || lower.includes("take a note")) {
+          const item = lower.replace(/.*(?:note|take a note)\s+/i, "").trim();
+          if (item) {
+            appData.notes.push(item);
+            saveData('notes', appData.notes);
+            speak(`Added note: ${item}`);
+            return;
+          }
+        }
+
+        // 5. Shopping List System
+        if (lower.includes("clear my shopping list") || lower.includes("clear shopping list")) {
+          appData.shopping = [];
+          saveData('shopping', appData.shopping);
+          speak("Your shopping list has been cleared.");
+          return;
+        }
+        if (lower.includes("shopping list") || lower.includes("what is on my shopping list")) {
+          const addMatch = lower.match(/add\s+(.+)\s+to\s+(?:my\s+)?shopping\s+list/i);
+          if (addMatch && addMatch[1]) {
+            const item = addMatch[1].trim();
+            appData.shopping.push(item);
+            saveData('shopping', appData.shopping);
+            speak(`Added ${item} to your shopping list.`);
+            return;
+          }
+          if (appData.shopping.length === 0) speak("Your shopping list is currently empty.");
+          else speak(`On your shopping list you have: ${appData.shopping.join(', ')}.`);
+          return;
+        }
+
+        // 6. Reminders System
+        if (lower.includes("clear my reminders") || lower.includes("clear reminders")) {
+          appData.reminders = [];
+          saveData('reminders', appData.reminders);
+          speak("Your reminders have been cleared.");
+          return;
+        }
+        if (lower.includes("read my reminders") || lower.includes("what are my reminders")) {
+          if (appData.reminders.length === 0) speak("You have no active reminders.");
+          else speak(`Here are your reminders: ${appData.reminders.join(', ')}.`);
+          return;
+        }
+        if (lower.includes("remind me")) {
+          const item = lower.replace(/.*remind me (?:to\s+)?/i, "").trim();
+          if (item) {
+            appData.reminders.push(item);
+            saveData('reminders', appData.reminders);
+            speak(`I will remind you to ${item}`);
+            return;
+          }
+        }
+
+        // 7. Timers
         if (lower.includes("timer") || lower.includes("count down")) {
           const timerSeconds = parseTimerCommand(lower);
           if (timerSeconds > 0) {
@@ -664,13 +809,13 @@
           }
         }
 
-        // 5. Alarms
+        // 8. Alarms
         if (lower.includes("alarm")) {
           setAlarm(lower);
           return;
         }
 
-        // 6. Weather Queries
+        // 9. Weather Queries
         if (lower.includes("weather") || lower.includes("temperature")) {
           const locationMatch = lower.match(/(?:weather|temperature)\s+(?:in|for|at)\s+(.+)/);
 
@@ -685,7 +830,7 @@
           return;
         }
 
-        // 7. Time & Date
+        // 10. Time & Date
         if (lower.includes("time")) {
           const now = new Date();
           const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -700,7 +845,7 @@
           return;
         }
 
-        // 8. Everything else passes to OpenRouter AI!
+        // 11. Everything else passes to OpenRouter AI!
         searchWeb(text);
       }
 
