@@ -359,48 +359,79 @@
         return { desc: "fair conditions", emoji: "🌤️" };
       }
 
-      // Fetch Current Weather + Hourly Forecast
-      async function fetchWeather() {
-        if (!navigator.geolocation) return;
+      // Render weather display from coordinates
+      async function updateWeatherByCoords(lat, lon, locationName = "") {
+        try {
+          const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=1`);
+          const weatherData = await weatherRes.json();
+
+          const temp = Math.round(weatherData.current_weather.temperature);
+          const weatherCode = weatherData.current_weather.weathercode;
+          const info = getWeatherInfo(weatherCode);
+
+          weatherEmojiDiv.textContent = info.emoji;
+          weatherTempDiv.textContent = `${temp}°C`;
+
+          const currentHour = new Date().getHours();
+          hourlyDisplay.innerHTML = "";
+
+          for (let i = currentHour; i < Math.min(currentHour + 5, 24); i++) {
+            const hourTime = i === 0 ? "12 AM" : i > 12 ? `${i - 12} PM` : i === 12 ? "12 PM" : `${i} AM`;
+            const hourTemp = Math.round(weatherData.hourly.temperature_2m[i]);
+            const hourCode = weatherData.hourly.weathercode[i];
+            const hourInfo = getWeatherInfo(hourCode);
+
+            const card = document.createElement("div");
+            card.className = "hourly-card";
+            card.innerHTML = `
+              <div class="hourly-time">${hourTime}</div>
+              <div class="hourly-emoji">${hourInfo.emoji}</div>
+              <div class="hourly-temp">${hourTemp}°C</div>
+            `;
+            hourlyDisplay.appendChild(card);
+          }
+
+          return { temp, desc: info.desc, locationName };
+        } catch (error) {
+          console.log("Error loading weather data:", error);
+          return null;
+        }
+      }
+
+      // Fetch Local Current Weather
+      async function fetchWeather(onSuccess) {
+        if (!navigator.geolocation) {
+          speak("Geolocation is not supported by your browser.");
+          return;
+        }
 
         navigator.geolocation.getCurrentPosition(async (position) => {
           const lat = position.coords.latitude;
           const lon = position.coords.longitude;
-
-          try {
-            const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=1`);
-            const weatherData = await weatherRes.json();
-
-            const temp = Math.round(weatherData.current_weather.temperature);
-            const weatherCode = weatherData.current_weather.weathercode;
-            const info = getWeatherInfo(weatherCode);
-
-            weatherEmojiDiv.textContent = info.emoji;
-            weatherTempDiv.textContent = `${temp}°C`;
-
-            const currentHour = new Date().getHours();
-            hourlyDisplay.innerHTML = "";
-
-            for (let i = currentHour; i < Math.min(currentHour + 5, 24); i++) {
-              const hourTime = i === 0 ? "12 AM" : i > 12 ? `${i - 12} PM` : i === 12 ? "12 PM" : `${i} AM`;
-              const hourTemp = Math.round(weatherData.hourly.temperature_2m[i]);
-              const hourCode = weatherData.hourly.weathercode[i];
-              const hourInfo = getWeatherInfo(hourCode);
-
-              const card = document.createElement("div");
-              card.className = "hourly-card";
-              card.innerHTML = `
-                <div class="hourly-time">${hourTime}</div>
-                <div class="hourly-emoji">${hourInfo.emoji}</div>
-                <div class="hourly-temp">${hourTemp}°C</div>
-              `;
-              hourlyDisplay.appendChild(card);
-            }
-
-          } catch (error) {
-            console.log("Error loading weather data:", error);
-          }
+          const result = await updateWeatherByCoords(lat, lon);
+          if (result && onSuccess) onSuccess(result);
         });
+      }
+
+      // Fetch Weather for specific city/country
+      async function fetchCityWeather(locationQuery) {
+        try {
+          const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(locationQuery)}&count=1&language=en&format=json`);
+          const geoData = await geoRes.json();
+
+          if (geoData.results && geoData.results.length > 0) {
+            const place = geoData.results[0];
+            const result = await updateWeatherByCoords(place.latitude, place.longitude, place.name);
+            if (result) {
+              speak(`In ${place.name}, it is currently ${result.temp} degrees Celsius with ${result.desc}.`);
+            }
+          } else {
+            speak(`Sorry, I couldn't find weather information for ${locationQuery}.`);
+          }
+        } catch (e) {
+          console.error(e);
+          speak("Sorry, I had trouble finding that location.");
+        }
       }
 
       // 🤖 OpenRouter FREE AI Handler
@@ -420,8 +451,8 @@
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
-              model: "google/gemma-4-26b-a4b-it:free", // Completely free model
-              temperature: 0.0, // Non-random, consistent answers
+              model: "google/gemma-4-26b-a4b-it:free",
+              temperature: 0.0,
               messages: [
                 {
                   role: "user",
@@ -468,10 +499,20 @@
           return;
         }
 
-        // 4. Weather
+        // 4. Weather Queries
         if (lower.includes("weather") || lower.includes("temperature")) {
-          fetchWeather();
-          speak("Here is the current weather update.");
+          // Check if user is asking for weather in a specific place (e.g. "weather in France" / "temperature in Tokyo")
+          const locationMatch = lower.match(/(?:weather|temperature)\s+(?:in|for|at)\s+(.+)/);
+
+          if (locationMatch && locationMatch[1]) {
+            const location = locationMatch[1].replace(/[^a-zA-Z\s]/g, "").trim();
+            fetchCityWeather(location);
+          } else {
+            // Local weather lookup
+            fetchWeather((data) => {
+              speak(`It is currently ${data.temp} degrees Celsius with ${data.desc}.`);
+            });
+          }
           return;
         }
 
