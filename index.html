@@ -298,20 +298,22 @@
     let alarmCheckInterval = null;
     let activeAlarms = [];
 
-    // Fullscreen Function
+    // Fullscreen Function (with 3-second delay capability)
     function openFullscreen() {
-      const elem = document.documentElement;
-      try {
-        if (elem.requestFullscreen) {
-          elem.requestFullscreen();
-        } else if (elem.webkitRequestFullscreen) {
-          elem.webkitRequestFullscreen();
-        } else if (elem.msRequestFullscreen) {
-          elem.msRequestFullscreen();
+      setTimeout(() => {
+        const elem = document.documentElement;
+        try {
+          if (elem.requestFullscreen) {
+            elem.requestFullscreen();
+          } else if (elem.webkitRequestFullscreen) {
+            elem.webkitRequestFullscreen();
+          } else if (elem.msRequestFullscreen) {
+            elem.msRequestFullscreen();
+          }
+        } catch (err) {
+          console.log("Fullscreen declined/unsupported:", err);
         }
-      } catch (err) {
-        console.log("Fullscreen declined/unsupported:", err);
-      }
+      }, 3000);
     }
 
     // Clock Functionality
@@ -360,7 +362,7 @@
     } else {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
-      recognition.interimResults = false;
+      recognition.interimResults = true; // Enabled interim results to detect speech interruptions immediately
       recognition.lang = 'en-US';
 
       function getAudioContext() {
@@ -432,18 +434,20 @@
         }
       }
 
+      function stopSpeaking() {
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+        }
+      }
+
       function speak(text, onEndCallback) {
-        try { recognition.stop(); } catch(e) {}
+        stopSpeaking();
         statusDiv.textContent = text;
         
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.onend = () => {
           statusDiv.textContent = "";
-          if (onEndCallback) {
-            onEndCallback();
-          } else {
-            try { recognition.start(); } catch(e) {}
-          }
+          if (onEndCallback) onEndCallback();
         };
         window.speechSynthesis.speak(utterance);
       }
@@ -452,7 +456,21 @@
         const lastIndex = event.results.length - 1;
         const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
 
+        // Speech Interruption Feature: Stop TTS if user speaks the wake word or talks while Spark is speaking
+        if (window.speechSynthesis.speaking && transcript.includes(WAKE_WORD)) {
+          stopSpeaking();
+          playChime();
+          document.body.classList.add('active');
+          statusDiv.textContent = "Spark is listening...";
+          awaitingCommand = true;
+          return;
+        }
+
+        // Only process final recognition results for commands
+        if (!event.results[lastIndex].isFinal) return;
+
         if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
+          stopSpeaking();
           playChime();
           document.body.classList.add('active');
           statusDiv.textContent = "Spark is listening...";
@@ -849,10 +867,21 @@
         searchWeb(text);
       }
 
-      recognition.onend = () => {
-        if (!window.speechSynthesis.speaking) {
-          try { recognition.start(); } catch(e) {}
+      // 24/7 Continuous Listening: Keep microphone running at all times
+      function startListening() {
+        try {
+          recognition.start();
+        } catch(e) {
+          // Already running or starting
         }
+      }
+
+      recognition.onend = () => {
+        startListening();
+      };
+
+      recognition.onerror = () => {
+        setTimeout(startListening, 1000);
       };
 
       startBtn.addEventListener('click', () => {
@@ -862,12 +891,8 @@
         ctx.resume();
 
         fetchWeather();
-        try {
-          recognition.start();
-          startBtn.style.display = 'none';
-        } catch (e) {
-          console.log("Speech Recognition start error:", e);
-        }
+        startListening();
+        startBtn.style.display = 'none';
       });
     }
   </script>
