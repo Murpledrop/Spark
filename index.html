@@ -433,7 +433,8 @@
       }
 
       function speak(text, onEndCallback) {
-        try { recognition.stop(); } catch(e) {}
+        // Cancel any active speech synthesis before speaking new text
+        window.speechSynthesis.cancel();
         statusDiv.textContent = text;
         
         const utterance = new SpeechSynthesisUtterance(text);
@@ -441,8 +442,6 @@
           statusDiv.textContent = "";
           if (onEndCallback) {
             onEndCallback();
-          } else {
-            try { recognition.start(); } catch(e) {}
           }
         };
         window.speechSynthesis.speak(utterance);
@@ -452,13 +451,32 @@
         const lastIndex = event.results.length - 1;
         const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
 
-        if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
+        // 🚀 BARGE-IN FEATURE: Interruption logic when Spark is currently talking
+        if (window.speechSynthesis.speaking && transcript.includes(WAKE_WORD)) {
+          window.speechSynthesis.cancel(); // Cancel TTS speech immediately
           playChime();
           document.body.classList.add('active');
           statusDiv.textContent = "Spark is listening...";
           awaitingCommand = true;
 
-          const remainingSpeech = transcript.split(WAKE_WORD)[1].trim();
+          const remainingSpeech = transcript.split(WAKE_WORD)[1]?.trim() || "";
+          if (remainingSpeech.length > 0) {
+            handleCommand(remainingSpeech);
+          }
+          return;
+        }
+
+        // Standard Wake Word Activation
+        if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
+          if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.cancel();
+          }
+          playChime();
+          document.body.classList.add('active');
+          statusDiv.textContent = "Spark is listening...";
+          awaitingCommand = true;
+
+          const remainingSpeech = transcript.split(WAKE_WORD)[1]?.trim() || "";
           if (remainingSpeech.length > 0) {
             handleCommand(remainingSpeech);
           }
@@ -849,9 +867,19 @@
         searchWeb(text);
       }
 
+      // 🎙️ 24/7 Keep-Alive Listeners
       recognition.onend = () => {
-        if (!window.speechSynthesis.speaking) {
-          try { recognition.start(); } catch(e) {}
+        try {
+          recognition.start();
+        } catch(e) {}
+      };
+
+      recognition.onerror = (event) => {
+        console.log("Speech recognition error:", event.error);
+        if (event.error === 'no-speech' || event.error === 'network') {
+          try {
+            recognition.start();
+          } catch (e) {}
         }
       };
 
