@@ -121,3 +121,780 @@
       font-size: 14px;
       opacity: 0.8;
       font-weight: 600;
+    }
+
+    .hourly-emoji {
+      font-size: 28px;
+      margin: 6px 0;
+    }
+
+    .hourly-temp {
+      font-size: 18px;
+      font-weight: 700;
+      color: #38bdf8;
+    }
+
+    /* Active Timer / Countdown Display */
+    #timerDisplay {
+      position: relative;
+      z-index: 1;
+      font-size: 32px;
+      font-weight: 800;
+      color: #a855f7;
+      text-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+      margin-top: 15px;
+      display: none;
+    }
+
+    /* Lists Widget Container */
+    #listsWidget {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 15px;
+      margin-top: 20px;
+      max-width: 90vw;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .list-card {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 12px 16px;
+      min-width: 180px;
+      max-width: 260px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      text-align: left;
+    }
+
+    .list-card h3 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      color: #38bdf8;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 4px;
+    }
+
+    .list-card ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 14px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .list-card li {
+      margin-bottom: 4px;
+    }
+
+    #startBtn {
+      position: relative;
+      z-index: 2;
+      padding: 16px 32px;
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      background: linear-gradient(135deg, #2575fc, #6a11cb);
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-top: 20px;
+    }
+
+    #startBtn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 25px rgba(37, 117, 252, 0.5);
+    }
+
+    #status {
+      position: relative;
+      z-index: 1;
+      font-size: 24px;
+      font-weight: 700;
+      color: #ffffff;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      margin-top: 15px;
+      text-align: center;
+      padding: 0 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="clockDisplay" class="large">--:--</div>
+
+  <div id="displayContainer">
+    <div id="weatherDisplay">
+      <div id="weatherEmoji"></div>
+      <div id="weatherTemp"></div>
+    </div>
+    <div id="hourlyDisplay"></div>
+  </div>
+
+  <div id="timerDisplay"></div>
+
+  <div id="listsWidget">
+    <div class="list-card">
+      <h3>📝 Notes</h3>
+      <ul id="notesUI"></ul>
+    </div>
+    <div class="list-card">
+      <h3>🛒 Shopping List</h3>
+      <ul id="shoppingUI"></ul>
+    </div>
+    <div class="list-card">
+      <h3>⏰ Reminders</h3>
+      <ul id="remindersUI"></ul>
+    </div>
+  </div>
+
+  <button id="startBtn">Click to Start Spark</button>
+  <div id="status"></div>
+
+  <script>
+    // 🔑 PASTE YOUR FREE OPENROUTER API KEY HERE
+    const OPENROUTER_API_KEY = "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";
+
+    const WAKE_WORD = "spark"; 
+
+    const startBtn = document.getElementById('startBtn');
+    const statusDiv = document.getElementById('status');
+    const weatherEmojiDiv = document.getElementById('weatherEmoji');
+    const weatherTempDiv = document.getElementById('weatherTemp');
+    const hourlyDisplay = document.getElementById('hourlyDisplay');
+    const clockDisplay = document.getElementById('clockDisplay');
+    const timerDisplay = document.getElementById('timerDisplay');
+
+    // Persistent Memory (localStorage)
+    let appData = {
+      notes: JSON.parse(localStorage.getItem('spark_notes')) || [],
+      shopping: JSON.parse(localStorage.getItem('spark_shopping')) || [],
+      reminders: JSON.parse(localStorage.getItem('spark_reminders')) || []
+    };
+
+    function updateListsUI() {
+      const renderList = (elementId, items) => {
+        const ul = document.getElementById(elementId);
+        ul.innerHTML = items.length === 0 ? "<i style='opacity:0.5'>Empty</i>" : items.map(item => `<li>${item}</li>`).join('');
+      };
+      renderList('notesUI', appData.notes);
+      renderList('shoppingUI', appData.shopping);
+      renderList('remindersUI', appData.reminders);
+    }
+    updateListsUI();
+
+    function saveData(key, array) {
+      localStorage.setItem(`spark_${key}`, JSON.stringify(array));
+      updateListsUI();
+    }
+
+    let currentViewMode = 0; // 0 = Clock View, 1 = Hourly Forecast View
+    let timerInterval = null;
+    let alarmCheckInterval = null;
+    let activeAlarms = [];
+
+    // Fullscreen Function (with 3-second delay capability)
+    function openFullscreen() {
+      setTimeout(() => {
+        const elem = document.documentElement;
+        try {
+          if (elem.requestFullscreen) {
+            elem.requestFullscreen();
+          } else if (elem.webkitRequestFullscreen) {
+            elem.webkitRequestFullscreen();
+          } else if (elem.msRequestFullscreen) {
+            elem.msRequestFullscreen();
+          }
+        } catch (err) {
+          console.log("Fullscreen declined/unsupported:", err);
+        }
+      }, 3000);
+    }
+
+    // Clock Functionality
+    function updateClock() {
+      const now = new Date();
+      clockDisplay.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Trigger Pulse Expansion Animation
+    function triggerPulseAnimation() {
+      document.body.classList.add('active');
+      setTimeout(() => {
+        if (!awaitingCommand) {
+          document.body.classList.remove('active');
+        }
+      }, 700);
+    }
+
+    // Alexa-style Display Cycle (Rotates every 8 seconds)
+    function cycleDisplayMode() {
+      triggerPulseAnimation();
+      
+      if (currentViewMode === 0) {
+        clockDisplay.className = "small";
+        weatherDisplay.style.display = "none";
+        hourlyDisplay.style.display = "flex";
+        currentViewMode = 1;
+      } else {
+        clockDisplay.className = "large";
+        weatherDisplay.style.display = "flex";
+        hourlyDisplay.style.display = "none";
+        currentViewMode = 0;
+      }
+    }
+
+    setInterval(cycleDisplayMode, 8000);
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let audioCtx = null;
+    let awaitingCommand = false;
+
+    if (!SpeechRecognition) {
+      alert("Speech Recognition API not supported in this browser. Try Chrome or Samsung Internet.");
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true; // Enabled interim results to detect speech interruptions immediately
+      recognition.lang = 'en-US';
+
+      function getAudioContext() {
+        if (!audioCtx) {
+          const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+          audioCtx = new AudioCtxClass();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        return audioCtx;
+      }
+
+      function playChime() {
+        try {
+          const ctx = getAudioContext();
+          const osc1 = ctx.createOscillator();
+          const gain1 = ctx.createGain();
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(587.33, ctx.currentTime);
+          gain1.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          osc1.connect(gain1);
+          gain1.connect(ctx.destination);
+          osc1.start(ctx.currentTime);
+          osc1.stop(ctx.currentTime + 0.25);
+
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+          gain2.gain.setValueAtTime(0.15, ctx.currentTime + 0.1);
+          gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.start(ctx.currentTime + 0.1);
+          osc2.stop(ctx.currentTime + 0.35);
+        } catch (e) {
+          console.log("Audio Context error:", e);
+        }
+      }
+
+      // Space Telemetry Alarm Chime
+      function playSpaceAlarmChime() {
+        try {
+          const ctx = getAudioContext();
+          const playBeep = (delay, freq) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+            osc.frequency.exponentialRampToValueAtTime(freq * 0.4, ctx.currentTime + delay + 0.2);
+            
+            gain.gain.setValueAtTime(0.2, ctx.currentTime + delay);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.2);
+            
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(ctx.currentTime + delay);
+            osc.stop(ctx.currentTime + delay + 0.2);
+          };
+
+          for (let i = 0; i < 4; i++) {
+            playBeep(i * 0.25, 1200);
+            playBeep(i * 0.25 + 0.1, 1600);
+          }
+        } catch (e) {
+          console.log("Space chime error:", e);
+        }
+      }
+
+      function stopSpeaking() {
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.cancel();
+        }
+      }
+
+      function speak(text, onEndCallback) {
+        stopSpeaking();
+        statusDiv.textContent = text;
+        
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.onend = () => {
+          statusDiv.textContent = "";
+          if (onEndCallback) onEndCallback();
+        };
+        window.speechSynthesis.speak(utterance);
+      }
+
+      recognition.onresult = (event) => {
+        const lastIndex = event.results.length - 1;
+        const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
+
+        // Speech Interruption Feature: Stop TTS if user speaks the wake word or talks while Spark is speaking
+        if (window.speechSynthesis.speaking && transcript.includes(WAKE_WORD)) {
+          stopSpeaking();
+          playChime();
+          document.body.classList.add('active');
+          statusDiv.textContent = "Spark is listening...";
+          awaitingCommand = true;
+          return;
+        }
+
+        // Only process final recognition results for commands
+        if (!event.results[lastIndex].isFinal) return;
+
+        if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
+          stopSpeaking();
+          playChime();
+          document.body.classList.add('active');
+          statusDiv.textContent = "Spark is listening...";
+          awaitingCommand = true;
+
+          const remainingSpeech = transcript.split(WAKE_WORD)[1].trim();
+          if (remainingSpeech.length > 0) {
+            handleCommand(remainingSpeech);
+          }
+        } 
+        else if (awaitingCommand) {
+          handleCommand(transcript);
+        }
+      };
+
+      function handleCommand(commandText) {
+        awaitingCommand = false;
+        document.body.classList.remove('active');
+        processCommand(commandText);
+      }
+
+      function wordsToDigits(text) {
+        const numberMap = {
+          'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4,
+          'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
+        };
+        let result = text;
+        for (let word in numberMap) {
+          result = result.replace(new RegExp(`\\b${word}\\b`, 'g'), numberMap[word]);
+        }
+        return result;
+      }
+
+      function getWeatherInfo(code) {
+        if (code === 0) return { desc: "clear skies", emoji: "☀️" };
+        if ([1, 2, 3].includes(code)) return { desc: "partly cloudy", emoji: "⛅" };
+        if ([45, 48].includes(code)) return { desc: "foggy", emoji: "🌫️" };
+        if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return { desc: "rainy", emoji: "🌧️" };
+        if ([71, 73, 75, 77, 85, 86].includes(code)) return { desc: "snowy", emoji: "❄️" };
+        if ([95, 96, 99].includes(code)) return { desc: "thunderstorms", emoji: "🌩️" };
+        return { desc: "fair conditions", emoji: "🌤️" };
+      }
+
+      // Render weather display from coordinates
+      async function updateWeatherByCoords(lat, lon, locationName = "") {
+        try {
+          const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=1`);
+          const weatherData = await weatherRes.json();
+
+          const temp = Math.round(weatherData.current_weather.temperature);
+          const weatherCode = weatherData.current_weather.weathercode;
+          const info = getWeatherInfo(weatherCode);
+
+          weatherEmojiDiv.textContent = info.emoji;
+          weatherTempDiv.textContent = `${temp}°C`;
+
+          const currentHour = new Date().getHours();
+          hourlyDisplay.innerHTML = "";
+
+          for (let i = currentHour; i < Math.min(currentHour + 5, 24); i++) {
+            const hourTime = i === 0 ? "12 AM" : i > 12 ? `${i - 12} PM` : i === 12 ? "12 PM" : `${i} AM`;
+            const hourTemp = Math.round(weatherData.hourly.temperature_2m[i]);
+            const hourCode = weatherData.hourly.weathercode[i];
+            const hourInfo = getWeatherInfo(hourCode);
+
+            const card = document.createElement("div");
+            card.className = "hourly-card";
+            card.innerHTML = `
+              <div class="hourly-time">${hourTime}</div>
+              <div class="hourly-emoji">${hourInfo.emoji}</div>
+              <div class="hourly-temp">${hourTemp}°C</div>
+            `;
+            hourlyDisplay.appendChild(card);
+          }
+
+          return { temp, desc: info.desc, locationName };
+        } catch (error) {
+          console.log("Error loading weather data:", error);
+          return null;
+        }
+      }
+
+      // Fetch Local Current Weather
+      async function fetchWeather(onSuccess) {
+        if (!navigator.geolocation) {
+          speak("Geolocation is not supported by your browser.");
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(async (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          const result = await updateWeatherByCoords(lat, lon);
+          if (result && onSuccess) onSuccess(result);
+        });
+      }
+
+      // Fetch Weather for specific city/country
+      async function fetchCityWeather(locationQuery) {
+        try {
+          const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(locationQuery)}&count=1&language=en&format=json`);
+          const geoData = await geoRes.json();
+
+          if (geoData.results && geoData.results.length > 0) {
+            const place = geoData.results[0];
+            const result = await updateWeatherByCoords(place.latitude, place.longitude, place.name);
+            if (result) {
+              speak(`In ${place.name}, it is currently ${result.temp} degrees Celsius with ${result.desc}.`);
+            }
+          } else {
+            speak(`Sorry, I couldn't find weather information for ${locationQuery}.`);
+          }
+        } catch (e) {
+          console.error(e);
+          speak("Sorry, I had trouble finding that location.");
+        }
+      }
+
+      // --- 🚀 TIMER & ALARM SYSTEM ---
+
+      function startTimer(totalSeconds) {
+        const MAX_SECONDS = 86400; // 24 hours cap
+        if (totalSeconds > MAX_SECONDS) {
+          speak("Timers are capped at 24 hours. Setting a timer for 24 hours instead.");
+          totalSeconds = MAX_SECONDS;
+        }
+
+        if (timerInterval) clearInterval(timerInterval);
+
+        let remaining = totalSeconds;
+        timerDisplay.style.display = "block";
+
+        const formatTime = (secs) => {
+          const h = Math.floor(secs / 3600);
+          const m = Math.floor((secs % 3600) / 60);
+          const s = secs % 60;
+          if (h > 0) return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+          return `${m}:${s < 10 ? '0' : ''}${s}`;
+        };
+
+        speak(`Timer set for ${formatTime(totalSeconds)}.`);
+
+        timerInterval = setInterval(() => {
+          remaining--;
+
+          if (remaining > 10) {
+            timerDisplay.textContent = `⏱️ ${formatTime(remaining)}`;
+          } 
+          else if (remaining <= 10 && remaining > 0) {
+            timerDisplay.textContent = `T-Minus ${remaining}`;
+            speak(`${remaining}`);
+          } 
+          else if (remaining <= 0) {
+            clearInterval(timerInterval);
+            timerDisplay.textContent = `🚀 T-Minus 0 - Complete!`;
+            playSpaceAlarmChime();
+            speak("Timer finished!");
+            setTimeout(() => { timerDisplay.style.display = "none"; }, 5000);
+          }
+        }, 1000);
+      }
+
+      function setAlarm(targetTimeStr) {
+        const timeMatch = targetTimeStr.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+        if (!timeMatch) {
+          speak("Sorry, I couldn't understand that alarm time.");
+          return;
+        }
+
+        let hours = parseInt(timeMatch[1]);
+        let minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+        const ampm = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
+
+        if (ampm === "pm" && hours < 12) hours += 12;
+        if (ampm === "am" && hours === 12) hours = 0;
+
+        const now = new Date();
+        const alarmDate = new Date();
+        alarmDate.setHours(hours, minutes, 0, 0);
+
+        if (alarmDate <= now) {
+          alarmDate.setDate(alarmDate.getDate() + 1);
+        }
+
+        activeAlarms.push(alarmDate);
+        speak(`Alarm set for ${alarmDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`);
+
+        if (!alarmCheckInterval) {
+          alarmCheckInterval = setInterval(() => {
+            const currentTime = new Date();
+            activeAlarms = activeAlarms.filter(alarm => {
+              if (currentTime >= alarm) {
+                playSpaceAlarmChime();
+                speak("Alarm ringing! Time to wake up!");
+                return false;
+              }
+              return true;
+            });
+          }, 1000);
+        }
+      }
+
+      function parseTimerCommand(text) {
+        const textNum = wordsToDigits(text);
+        let seconds = 0;
+
+        const hoursMatch = textNum.match(/(\d+)\s*(?:hour|hours|hr|hrs)/);
+        const minsMatch = textNum.match(/(\d+)\s*(?:minute|minutes|min|mins)/);
+        const secsMatch = textNum.match(/(\d+)\s*(?:second|seconds|sec|secs)/);
+
+        if (hoursMatch) seconds += parseInt(hoursMatch[1]) * 3600;
+        if (minsMatch) seconds += parseInt(minsMatch[1]) * 60;
+        if (secsMatch) seconds += parseInt(secsMatch[1]);
+
+        return seconds;
+      }
+
+      // 🤖 OpenRouter FREE AI Handler
+      async function searchWeb(query) {
+        statusDiv.textContent = "Spark is thinking...";
+
+        if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === "YOUR_OPENROUTER_API_KEY_HERE") {
+          speak("Please set your OpenRouter API key in the code.");
+          return;
+        }
+
+        try {
+          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: "google/gemma-4-26b-a4b-it:free",
+              temperature: 0.0,
+              messages: [
+                {
+                  role: "user",
+                  content: `You are Spark, a helpful voice assistant. Answer the user's question directly in 1 or 2 short sentences suitable for speech: ${query}`
+                }
+              ]
+            })
+          });
+
+          const data = await response.json();
+
+          if (data.choices && data.choices[0].message.content) {
+            const aiResponse = data.choices[0].message.content.trim();
+            speak(aiResponse);
+          } else {
+            speak("Sorry, I couldn't find an answer to that.");
+          }
+
+        } catch (error) {
+          console.error("OpenRouter API Error:", error);
+          speak("Sorry, I had trouble connecting to my AI service.");
+        }
+      }
+
+      // Command Processor
+      function processCommand(text) {
+        const lower = text.toLowerCase().trim();
+
+        // 1. Greetings
+        if (/^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/.test(lower)) {
+          speak("Hi, I'm Spark. What can I help you with?");
+          return;
+        }
+
+        // 2. Identity
+        if (lower.includes("what's your name") || lower.includes("what is your name") || lower.includes("who are you")) {
+          speak("I'm Spark, your virtual assistant. What can I help you with?");
+          return;
+        }
+
+        // 3. Status
+        if (lower.includes("how are you") || lower.includes("how do you do")) {
+          speak("I'm doing great! How can I help you today?");
+          return;
+        }
+
+        // 4. Notes System
+        if (lower.includes("clear my notes") || lower.includes("clear notes")) {
+          appData.notes = [];
+          saveData('notes', appData.notes);
+          speak("Your notes have been cleared.");
+          return;
+        }
+        if (lower.includes("read my notes") || lower.includes("show my notes") || lower.includes("what are my notes")) {
+          if (appData.notes.length === 0) speak("You don't have any saved notes.");
+          else speak(`Here are your notes: ${appData.notes.join(', ')}.`);
+          return;
+        }
+        if (lower.includes("note") || lower.includes("take a note")) {
+          const item = lower.replace(/.*(?:note|take a note)\s+/i, "").trim();
+          if (item) {
+            appData.notes.push(item);
+            saveData('notes', appData.notes);
+            speak(`Added note: ${item}`);
+            return;
+          }
+        }
+
+        // 5. Shopping List System
+        if (lower.includes("clear my shopping list") || lower.includes("clear shopping list")) {
+          appData.shopping = [];
+          saveData('shopping', appData.shopping);
+          speak("Your shopping list has been cleared.");
+          return;
+        }
+        if (lower.includes("shopping list") || lower.includes("what is on my shopping list")) {
+          const addMatch = lower.match(/add\s+(.+)\s+to\s+(?:my\s+)?shopping\s+list/i);
+          if (addMatch && addMatch[1]) {
+            const item = addMatch[1].trim();
+            appData.shopping.push(item);
+            saveData('shopping', appData.shopping);
+            speak(`Added ${item} to your shopping list.`);
+            return;
+          }
+          if (appData.shopping.length === 0) speak("Your shopping list is currently empty.");
+          else speak(`On your shopping list you have: ${appData.shopping.join(', ')}.`);
+          return;
+        }
+
+        // 6. Reminders System
+        if (lower.includes("clear my reminders") || lower.includes("clear reminders")) {
+          appData.reminders = [];
+          saveData('reminders', appData.reminders);
+          speak("Your reminders have been cleared.");
+          return;
+        }
+        if (lower.includes("read my reminders") || lower.includes("what are my reminders")) {
+          if (appData.reminders.length === 0) speak("You have no active reminders.");
+          else speak(`Here are your reminders: ${appData.reminders.join(', ')}.`);
+          return;
+        }
+        if (lower.includes("remind me")) {
+          const item = lower.replace(/.*remind me (?:to\s+)?/i, "").trim();
+          if (item) {
+            appData.reminders.push(item);
+            saveData('reminders', appData.reminders);
+            speak(`I will remind you to ${item}`);
+            return;
+          }
+        }
+
+        // 7. Timers
+        if (lower.includes("timer") || lower.includes("count down")) {
+          const timerSeconds = parseTimerCommand(lower);
+          if (timerSeconds > 0) {
+            startTimer(timerSeconds);
+            return;
+          }
+        }
+
+        // 8. Alarms
+        if (lower.includes("alarm")) {
+          setAlarm(lower);
+          return;
+        }
+
+        // 9. Weather Queries
+        if (lower.includes("weather") || lower.includes("temperature")) {
+          const locationMatch = lower.match(/(?:weather|temperature)\s+(?:in|for|at)\s+(.+)/);
+
+          if (locationMatch && locationMatch[1]) {
+            const location = locationMatch[1].replace(/[^a-zA-Z\s]/g, "").trim();
+            fetchCityWeather(location);
+          } else {
+            fetchWeather((data) => {
+              speak(`It is currently ${data.temp} degrees Celsius with ${data.desc}.`);
+            });
+          }
+          return;
+        }
+
+        // 10. Time & Date
+        if (lower.includes("time")) {
+          const now = new Date();
+          const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          speak(`The current time is ${timeString}.`);
+          return;
+        }
+
+        if (lower.includes("date")) {
+          const now = new Date();
+          const dateString = now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+          speak(`Today is ${dateString}.`);
+          return;
+        }
+
+        // 11. Everything else passes to OpenRouter AI!
+        searchWeb(text);
+      }
+
+      // 24/7 Continuous Listening: Keep microphone running at all times
+      function startListening() {
+        try {
+          recognition.start();
+        } catch(e) {
+          // Already running or starting
+        }
+      }
+
+      recognition.onend = () => {
+        startListening();
+      };
+
+      recognition.onerror = () => {
+        setTimeout(startListening, 1000);
+      };
+
+      startBtn.addEventListener('click', () => {
+        openFullscreen();
+
+        const ctx = getAudioContext();
+        ctx.resume();
+
+        fetchWeather();
+        startListening();
+        startBtn.style.display = 'none';
+      });
+    }
+  </script>
+</body>
+</html>
