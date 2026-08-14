@@ -257,10 +257,18 @@
   <div id="status"></div>
 
   <script>
-    // 🔑 PASTE YOUR FREE OPENROUTER API KEY HERE
+    // 🔑 OPENROUTER API KEY
     const OPENROUTER_API_KEY = "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";
 
     const WAKE_WORD = "spark"; 
+
+    // 🧠 Multi-Turn Conversation History Memory
+    let conversationHistory = [
+      {
+        role: "system",
+        content: "You are Spark, a helpful voice assistant. Answer the user's questions directly in 1 or 2 short sentences suitable for speech."
+      }
+    ];
 
     const startBtn = document.getElementById('startBtn');
     const statusDiv = document.getElementById('status');
@@ -332,7 +340,7 @@
       }, 700);
     }
 
-    // Alexa-style Display Cycle (Rotates every 8 seconds)
+    // Display Cycle
     function cycleDisplayMode() {
       triggerPulseAnimation();
       
@@ -403,7 +411,6 @@
         }
       }
 
-      // Space Telemetry Alarm Chime
       function playSpaceAlarmChime() {
         try {
           const ctx = getAudioContext();
@@ -433,7 +440,6 @@
       }
 
       function speak(text, onEndCallback) {
-        // Cancel any active speech synthesis before speaking new text
         window.speechSynthesis.cancel();
         statusDiv.textContent = text;
         
@@ -451,9 +457,8 @@
         const lastIndex = event.results.length - 1;
         const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
 
-        // 🚀 BARGE-IN FEATURE: Interruption logic when Spark is currently talking
         if (window.speechSynthesis.speaking && transcript.includes(WAKE_WORD)) {
-          window.speechSynthesis.cancel(); // Cancel TTS speech immediately
+          window.speechSynthesis.cancel();
           playChime();
           document.body.classList.add('active');
           statusDiv.textContent = "Spark is listening...";
@@ -466,7 +471,6 @@
           return;
         }
 
-        // Standard Wake Word Activation
         if (!awaitingCommand && transcript.includes(WAKE_WORD)) {
           if (window.speechSynthesis.speaking) {
             window.speechSynthesis.cancel();
@@ -514,7 +518,6 @@
         return { desc: "fair conditions", emoji: "🌤️" };
       }
 
-      // Render weather display from coordinates
       async function updateWeatherByCoords(lat, lon, locationName = "") {
         try {
           const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,weathercode&forecast_days=1`);
@@ -553,7 +556,6 @@
         }
       }
 
-      // Fetch Local Current Weather
       async function fetchWeather(onSuccess) {
         if (!navigator.geolocation) {
           speak("Geolocation is not supported by your browser.");
@@ -568,7 +570,6 @@
         });
       }
 
-      // Fetch Weather for specific city/country
       async function fetchCityWeather(locationQuery) {
         try {
           const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(locationQuery)}&count=1&language=en&format=json`);
@@ -592,7 +593,7 @@
       // --- 🚀 TIMER & ALARM SYSTEM ---
 
       function startTimer(totalSeconds) {
-        const MAX_SECONDS = 86400; // 24 hours cap
+        const MAX_SECONDS = 86400;
         if (totalSeconds > MAX_SECONDS) {
           speak("Timers are capped at 24 hours. Setting a timer for 24 hours instead.");
           totalSeconds = MAX_SECONDS;
@@ -688,13 +689,27 @@
         return seconds;
       }
 
-      // 🤖 OpenRouter FREE AI Handler
+      // 🤖 OpenRouter FREE AI Handler with Multi-Turn Memory
       async function searchWeb(query) {
         statusDiv.textContent = "Spark is thinking...";
 
         if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === "YOUR_OPENROUTER_API_KEY_HERE") {
           speak("Please set your OpenRouter API key in the code.");
           return;
+        }
+
+        // 1. Add user query to conversation history
+        conversationHistory.push({
+          role: "user",
+          content: query
+        });
+
+        // 2. Keep memory bounded (system prompt + last 10 messages max)
+        if (conversationHistory.length > 11) {
+          conversationHistory = [
+            conversationHistory[0],
+            ...conversationHistory.slice(-10)
+          ];
         }
 
         try {
@@ -706,13 +721,8 @@
             },
             body: JSON.stringify({
               model: "google/gemma-4-26b-a4b-it:free",
-              temperature: 0.0,
-              messages: [
-                {
-                  role: "user",
-                  content: `You are Spark, a helpful voice assistant. Answer the user's question directly in 1 or 2 short sentences suitable for speech: ${query}`
-                }
-              ]
+              temperature: 0.7,
+              messages: conversationHistory // Send entire conversation memory array
             })
           });
 
@@ -720,6 +730,13 @@
 
           if (data.choices && data.choices[0].message.content) {
             const aiResponse = data.choices[0].message.content.trim();
+            
+            // 3. Store AI response back into conversation history
+            conversationHistory.push({
+              role: "assistant",
+              content: aiResponse
+            });
+
             speak(aiResponse);
           } else {
             speak("Sorry, I couldn't find an answer to that.");
@@ -735,25 +752,37 @@
       function processCommand(text) {
         const lower = text.toLowerCase().trim();
 
-        // 1. Greetings
+        // 1. Clear AI Conversation Memory
+        if (lower.includes("clear memory") || lower.includes("forget conversation") || lower.includes("reset conversation")) {
+          conversationHistory = [
+            {
+              role: "system",
+              content: "You are Spark, a helpful voice assistant. Answer the user's questions directly in 1 or 2 short sentences suitable for speech."
+            }
+          ];
+          speak("I've reset my conversation memory.");
+          return;
+        }
+
+        // 2. Greetings
         if (/^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/.test(lower)) {
           speak("Hi, I'm Spark. What can I help you with?");
           return;
         }
 
-        // 2. Identity
+        // 3. Identity
         if (lower.includes("what's your name") || lower.includes("what is your name") || lower.includes("who are you")) {
           speak("I'm Spark, your virtual assistant. What can I help you with?");
           return;
         }
 
-        // 3. Status
+        // 4. Status
         if (lower.includes("how are you") || lower.includes("how do you do")) {
           speak("I'm doing great! How can I help you today?");
           return;
         }
 
-        // 4. Notes System
+        // 5. Notes System
         if (lower.includes("clear my notes") || lower.includes("clear notes")) {
           appData.notes = [];
           saveData('notes', appData.notes);
@@ -775,7 +804,7 @@
           }
         }
 
-        // 5. Shopping List System
+        // 6. Shopping List System
         if (lower.includes("clear my shopping list") || lower.includes("clear shopping list")) {
           appData.shopping = [];
           saveData('shopping', appData.shopping);
@@ -796,7 +825,7 @@
           return;
         }
 
-        // 6. Reminders System
+        // 7. Reminders System
         if (lower.includes("clear my reminders") || lower.includes("clear reminders")) {
           appData.reminders = [];
           saveData('reminders', appData.reminders);
@@ -818,7 +847,7 @@
           }
         }
 
-        // 7. Timers
+        // 8. Timers
         if (lower.includes("timer") || lower.includes("count down")) {
           const timerSeconds = parseTimerCommand(lower);
           if (timerSeconds > 0) {
@@ -827,13 +856,13 @@
           }
         }
 
-        // 8. Alarms
+        // 9. Alarms
         if (lower.includes("alarm")) {
           setAlarm(lower);
           return;
         }
 
-        // 9. Weather Queries
+        // 10. Weather Queries
         if (lower.includes("weather") || lower.includes("temperature")) {
           const locationMatch = lower.match(/(?:weather|temperature)\s+(?:in|for|at)\s+(.+)/);
 
@@ -848,7 +877,7 @@
           return;
         }
 
-        // 10. Time & Date
+        // 11. Time & Date
         if (lower.includes("time")) {
           const now = new Date();
           const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -863,11 +892,10 @@
           return;
         }
 
-        // 11. Everything else passes to OpenRouter AI!
+        // 12. Multi-turn AI response
         searchWeb(text);
       }
 
-      // 🎙️ 24/7 Keep-Alive Listeners
       recognition.onend = () => {
         try {
           recognition.start();
