@@ -44,6 +44,98 @@
       transform: translate(-50%, -50%) scale(150);
     }
 
+    /* Transparent Camera Launcher Button */
+    #camLauncherBtn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 100;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      font-size: 22px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    #camLauncherBtn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(1.1);
+    }
+
+    /* Camera View Overlay Container */
+    #cameraOverlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #000;
+      z-index: 999;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #cameraVideo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Overlay Controls */
+    .cam-controls {
+      position: absolute;
+      bottom: 30px;
+      display: flex;
+      gap: 20px;
+      z-index: 1000;
+    }
+
+    .cam-btn {
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #ffffff;
+      padding: 12px 20px;
+      border-radius: 30px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #exitCamBtn {
+      position: absolute;
+      top: 25px;
+      right: 25px;
+      background: rgba(220, 38, 38, 0.8);
+      border: none;
+      color: #ffffff;
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+
     /* Main Center Card Container */
     #displayContainer {
       position: relative;
@@ -213,7 +305,7 @@
 
     #status {
       position: relative;
-      z-index: 1;
+      z-index: 1001;
       font-size: 24px;
       font-weight: 700;
       color: #ffffff;
@@ -225,6 +317,17 @@
   </style>
 </head>
 <body>
+
+  <button id="camLauncherBtn" title="Launch Camera Vision">📷</button>
+
+  <div id="cameraOverlay">
+    <button id="exitCamBtn">✖</button>
+    <video id="cameraVideo" autoplay playsinline></video>
+    <div class="cam-controls">
+      <button id="switchCamBtn" class="cam-btn">🔄 Switch</button>
+      <button id="toggleCamBtn" class="cam-btn">⏸️ Pause</button>
+    </div>
+  </div>
 
   <div id="clockDisplay" class="large">--:--</div>
 
@@ -278,6 +381,18 @@
     const clockDisplay = document.getElementById('clockDisplay');
     const timerDisplay = document.getElementById('timerDisplay');
 
+    // Camera DOM Elements
+    const camLauncherBtn = document.getElementById('camLauncherBtn');
+    const cameraOverlay = document.getElementById('cameraOverlay');
+    const cameraVideo = document.getElementById('cameraVideo');
+    const exitCamBtn = document.getElementById('exitCamBtn');
+    const switchCamBtn = document.getElementById('switchCamBtn');
+    const toggleCamBtn = document.getElementById('toggleCamBtn');
+
+    let cameraStream = null;
+    let currentFacingMode = "environment"; // "user" or "environment"
+    let isCameraActive = false;
+
     // Persistent Memory (localStorage)
     let appData = {
       notes: JSON.parse(localStorage.getItem('spark_notes')) || [],
@@ -305,6 +420,78 @@
     let timerInterval = null;
     let alarmCheckInterval = null;
     let activeAlarms = [];
+
+    // Helper: Check for Mobile Device
+    function isMobileDevice() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+             (window.innerWidth <= 768 && 'ontouchstart' in window);
+    }
+
+    // --- 📷 CAMERA VISION FUNCTIONS ---
+    async function startCamera() {
+      if (!isMobileDevice()) {
+        alert("Error CamSpX0: Camera feature not available on Desktops.");
+        return;
+      }
+
+      try {
+        if (cameraStream) {
+          stopCamera();
+        }
+
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: currentFacingMode }
+        });
+
+        cameraVideo.srcObject = cameraStream;
+        cameraOverlay.style.display = "flex";
+        isCameraActive = true;
+        toggleCamBtn.textContent = "⏸️ Pause";
+        speak("Camera vision activated.");
+      } catch (err) {
+        console.error("Camera Access Error:", err);
+        alert("Could not access camera. Please check permissions.");
+      }
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+      cameraOverlay.style.display = "none";
+      isCameraActive = false;
+    }
+
+    function toggleCameraStream() {
+      if (!cameraStream) return;
+      const videoTrack = cameraStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        toggleCamBtn.textContent = videoTrack.enabled ? "⏸️ Pause" : "▶️ Resume";
+      }
+    }
+
+    async function switchCameraFacing() {
+      currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
+      await startCamera();
+    }
+
+    // Capture Image Frame for Vision AI
+    function captureCameraSnapshot() {
+      if (!isCameraActive || !cameraVideo) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = cameraVideo.videoWidth || 640;
+      canvas.height = cameraVideo.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.8);
+    }
+
+    camLauncherBtn.addEventListener('click', startCamera);
+    exitCamBtn.addEventListener('click', stopCamera);
+    toggleCamBtn.addEventListener('click', toggleCameraStream);
+    switchCamBtn.addEventListener('click', switchCameraFacing);
 
     // Fullscreen Function
     function openFullscreen() {
@@ -689,7 +876,7 @@
         return seconds;
       }
 
-      // 🤖 OpenRouter FREE AI Handler with Multi-Turn Memory
+      // 🤖 OpenRouter Vision & Multi-Turn AI Handler
       async function searchWeb(query) {
         statusDiv.textContent = "Spark is thinking...";
 
@@ -698,10 +885,27 @@
           return;
         }
 
+        let userMessageContent;
+
+        // Check if camera vision snapshot is available
+        if (isCameraActive) {
+          const snapshotBase64 = captureCameraSnapshot();
+          if (snapshotBase64) {
+            userMessageContent = [
+              { type: "text", text: query },
+              { type: "image_url", image_url: { url: snapshotBase64 } }
+            ];
+          } else {
+            userMessageContent = query;
+          }
+        } else {
+          userMessageContent = query;
+        }
+
         // 1. Add user query to conversation history
         conversationHistory.push({
           role: "user",
-          content: query
+          content: userMessageContent
         });
 
         // 2. Keep memory bounded (system prompt + last 10 messages max)
@@ -722,7 +926,7 @@
             body: JSON.stringify({
               model: "google/gemma-4-26b-a4b-it:free",
               temperature: 0.7,
-              messages: conversationHistory // Send entire conversation memory array
+              messages: conversationHistory
             })
           });
 
@@ -892,7 +1096,7 @@
           return;
         }
 
-        // 12. Multi-turn AI response
+        // 12. Vision & Multi-turn AI response
         searchWeb(text);
       }
 
