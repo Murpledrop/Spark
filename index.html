@@ -44,7 +44,39 @@
       transform: translate(-50%, -50%) scale(150);
     }
 
-    /* Transparent Camera Launcher Button */
+    /* Transparent Mic Toggle Button (Top-Left) */
+    #micToggleBtn {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 100;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      font-size: 22px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    #micToggleBtn:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(1.1);
+    }
+
+    #micToggleBtn.disabled {
+      background: rgba(220, 38, 38, 0.4);
+      border-color: rgba(220, 38, 38, 0.6);
+    }
+
+    /* Transparent Camera Launcher Button (Top-Right) */
     #camLauncherBtn {
       position: fixed;
       top: 20px;
@@ -245,6 +277,7 @@
       display: flex;
       gap: 15px;
       margin-top: 20px;
+      margin-bottom: 70px;
       max-width: 90vw;
       flex-wrap: wrap;
       justify-content: center;
@@ -314,10 +347,66 @@
       text-align: center;
       padding: 0 20px;
     }
+
+    /* Bottom Dark-Mode Squircle Text Input Container */
+    #textInputContainer {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      gap: 10px;
+      width: 90%;
+      max-width: 500px;
+    }
+
+    #textInput {
+      flex: 1;
+      background: #1e1e24;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 12px 18px;
+      font-size: 16px;
+      color: #ffffff;
+      outline: none;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(8px);
+      transition: border-color 0.2s ease;
+    }
+
+    #textInput::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    #textInput:focus {
+      border-color: #38bdf8;
+    }
+
+    #textSendBtn {
+      background: #1e1e24;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 0 18px;
+      font-size: 18px;
+      color: #ffffff;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      transition: all 0.2s ease;
+    }
+
+    #textSendBtn:hover {
+      background: #2a2a32;
+      border-color: #38bdf8;
+    }
   </style>
 </head>
 <body>
 
+  <!-- Top-Left Microphone Toggle Button -->
+  <button id="micToggleBtn" title="Toggle Microphone">🎤</button>
+
+  <!-- Top-Right Camera Vision Button -->
   <button id="camLauncherBtn" title="Launch Camera Vision">📷</button>
 
   <div id="cameraOverlay">
@@ -359,6 +448,12 @@
   <button id="startBtn">Click to Start Spark</button>
   <div id="status"></div>
 
+  <!-- Bottom Dark-Mode Squircle Text Input -->
+  <div id="textInputContainer">
+    <input type="text" id="textInput" placeholder="Type your command..." />
+    <button id="textSendBtn">➔</button>
+  </div>
+
   <script>
     // 🔑 OPENROUTER API KEY
     const OPENROUTER_API_KEY = "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";
@@ -389,8 +484,14 @@
     const switchCamBtn = document.getElementById('switchCamBtn');
     const toggleCamBtn = document.getElementById('toggleCamBtn');
 
+    // Mic & Text Input DOM Elements
+    const micToggleBtn = document.getElementById('micToggleBtn');
+    const textInput = document.getElementById('textInput');
+    const textSendBtn = document.getElementById('textSendBtn');
+
+    let isMicEnabled = true;
     let cameraStream = null;
-    let currentFacingMode = "environment"; // "user" or "environment"
+    let currentFacingMode = "environment"; 
     let isCameraActive = false;
 
     // Persistent Memory (localStorage)
@@ -477,7 +578,6 @@
       await startCamera();
     }
 
-    // Capture Image Frame for Vision AI
     function captureCameraSnapshot() {
       if (!isCameraActive || !cameraVideo) return null;
       const canvas = document.createElement("canvas");
@@ -517,7 +617,6 @@
     setInterval(updateClock, 1000);
     updateClock();
 
-    // Trigger Pulse Expansion Animation
     function triggerPulseAnimation() {
       document.body.classList.add('active');
       setTimeout(() => {
@@ -527,7 +626,6 @@
       }, 700);
     }
 
-    // Display Cycle
     function cycleDisplayMode() {
       triggerPulseAnimation();
       
@@ -549,11 +647,12 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let audioCtx = null;
     let awaitingCommand = false;
+    let recognition = null;
 
     if (!SpeechRecognition) {
       alert("Speech Recognition API not supported in this browser. Try Chrome or Samsung Internet.");
     } else {
-      const recognition = new SpeechRecognition();
+      recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = false;
       recognition.lang = 'en-US';
@@ -641,6 +740,8 @@
       }
 
       recognition.onresult = (event) => {
+        if (!isMicEnabled) return;
+
         const lastIndex = event.results.length - 1;
         const transcript = event.results[lastIndex][0].transcript.trim().toLowerCase();
 
@@ -778,7 +879,6 @@
       }
 
       // --- 🚀 TIMER & ALARM SYSTEM ---
-
       function startTimer(totalSeconds) {
         const MAX_SECONDS = 86400;
         if (totalSeconds > MAX_SECONDS) {
@@ -887,7 +987,6 @@
 
         let userMessageContent;
 
-        // Check if camera vision snapshot is available
         if (isCameraActive) {
           const snapshotBase64 = captureCameraSnapshot();
           if (snapshotBase64) {
@@ -902,13 +1001,11 @@
           userMessageContent = query;
         }
 
-        // 1. Add user query to conversation history
         conversationHistory.push({
           role: "user",
           content: userMessageContent
         });
 
-        // 2. Keep memory bounded (system prompt + last 10 messages max)
         if (conversationHistory.length > 11) {
           conversationHistory = [
             conversationHistory[0],
@@ -935,7 +1032,6 @@
           if (data.choices && data.choices[0].message.content) {
             const aiResponse = data.choices[0].message.content.trim();
             
-            // 3. Store AI response back into conversation history
             conversationHistory.push({
               role: "assistant",
               content: aiResponse
@@ -956,7 +1052,6 @@
       function processCommand(text) {
         const lower = text.toLowerCase().trim();
 
-        // 1. Clear AI Conversation Memory
         if (lower.includes("clear memory") || lower.includes("forget conversation") || lower.includes("reset conversation")) {
           conversationHistory = [
             {
@@ -968,25 +1063,21 @@
           return;
         }
 
-        // 2. Greetings
         if (/^(hello|hi|hey|greetings|good morning|good afternoon|good evening)\b/.test(lower)) {
           speak("Hi, I'm Spark. What can I help you with?");
           return;
         }
 
-        // 3. Identity
         if (lower.includes("what's your name") || lower.includes("what is your name") || lower.includes("who are you")) {
           speak("I'm Spark, your virtual assistant. What can I help you with?");
           return;
         }
 
-        // 4. Status
         if (lower.includes("how are you") || lower.includes("how do you do")) {
           speak("I'm doing great! How can I help you today?");
           return;
         }
 
-        // 5. Notes System
         if (lower.includes("clear my notes") || lower.includes("clear notes")) {
           appData.notes = [];
           saveData('notes', appData.notes);
@@ -1008,7 +1099,6 @@
           }
         }
 
-        // 6. Shopping List System
         if (lower.includes("clear my shopping list") || lower.includes("clear shopping list")) {
           appData.shopping = [];
           saveData('shopping', appData.shopping);
@@ -1029,7 +1119,6 @@
           return;
         }
 
-        // 7. Reminders System
         if (lower.includes("clear my reminders") || lower.includes("clear reminders")) {
           appData.reminders = [];
           saveData('reminders', appData.reminders);
@@ -1051,7 +1140,6 @@
           }
         }
 
-        // 8. Timers
         if (lower.includes("timer") || lower.includes("count down")) {
           const timerSeconds = parseTimerCommand(lower);
           if (timerSeconds > 0) {
@@ -1060,13 +1148,11 @@
           }
         }
 
-        // 9. Alarms
         if (lower.includes("alarm")) {
           setAlarm(lower);
           return;
         }
 
-        // 10. Weather Queries
         if (lower.includes("weather") || lower.includes("temperature")) {
           const locationMatch = lower.match(/(?:weather|temperature)\s+(?:in|for|at)\s+(.+)/);
 
@@ -1081,7 +1167,6 @@
           return;
         }
 
-        // 11. Time & Date
         if (lower.includes("time")) {
           const now = new Date();
           const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1096,24 +1181,67 @@
           return;
         }
 
-        // 12. Vision & Multi-turn AI response
         searchWeb(text);
       }
 
       recognition.onend = () => {
-        try {
-          recognition.start();
-        } catch(e) {}
+        if (isMicEnabled) {
+          try {
+            recognition.start();
+          } catch(e) {}
+        }
       };
 
       recognition.onerror = (event) => {
         console.log("Speech recognition error:", event.error);
-        if (event.error === 'no-speech' || event.error === 'network') {
+        if (isMicEnabled && (event.error === 'no-speech' || event.error === 'network')) {
           try {
             recognition.start();
           } catch (e) {}
         }
       };
+
+      // Toggle Microphone Switch
+      micToggleBtn.addEventListener('click', () => {
+        isMicEnabled = !isMicEnabled;
+
+        if (isMicEnabled) {
+          micToggleBtn.textContent = '🎤';
+          micToggleBtn.classList.remove('disabled');
+          try {
+            recognition.start();
+            speak("Microphone enabled.");
+          } catch (e) {
+            console.log("Recognition start error:", e);
+          }
+        } else {
+          micToggleBtn.textContent = '🎙️❌';
+          micToggleBtn.classList.add('disabled');
+          try {
+            recognition.stop();
+            speak("Microphone disabled.");
+          } catch (e) {
+            console.log("Recognition stop error:", e);
+          }
+        }
+      });
+
+      // Send typed commands
+      function sendTypedCommand() {
+        const query = textInput.value.trim();
+        if (query.length > 0) {
+          processCommand(query);
+          textInput.value = '';
+        }
+      }
+
+      textSendBtn.addEventListener('click', sendTypedCommand);
+
+      textInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          sendTypedCommand();
+        }
+      });
 
       startBtn.addEventListener('click', () => {
         openFullscreen();
